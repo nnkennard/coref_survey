@@ -21,8 +21,8 @@ class DatasetSplit(object):
 
 class FormatName(object):
   jsonl = 'jsonl'
-  bert_jsonl = 'jsonlb'
-  ALL_FORMATS = [jsonl, bert_jsonl]
+  jsonlb = 'jsonlb'
+  ALL_FORMATS = [jsonl, jsonlb]
 
 def get_filename(data_home, dataset_name, dataset_split, format_name):
   return os.path.join(data_home, 'processed', dataset_name,
@@ -129,10 +129,15 @@ class Dataset(object):
     self.name = dataset_name
     self.documents = []
 
+    self.DUMP_FUNCTIONS = {
+      FormatName.jsonl: self.dump_to_jsonl,
+      FormatName.jsonlb: self.dump_to_jsonlb
+      }
+
   def dump_to_jsonl(self):
     return "\n".join(doc.dump_to_jsonl() for doc in self.documents)
 
-  def dump_to_bert_jsonl(self, ):
+  def dump_to_jsonlb(self, ):
     pass
 
 
