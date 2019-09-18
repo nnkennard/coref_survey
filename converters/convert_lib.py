@@ -2,6 +2,7 @@ import csv
 import json
 import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
+import os
 
 class DatasetName(object):
   conll = 'conll'
@@ -12,11 +13,20 @@ class DatasetName(object):
   wikicoref = 'wikicoref'
   ALL_DATASETS = [conll, gap, knowref, preco, red, wikicoref]
 
+class DatasetSplit(object):
+  train = 'train'
+  test = 'test'
+  dev = 'dev'
+  valid = 'valid'
+
 class FormatName(object):
   jsonl = 'jsonl'
-  bert_jsonl = 'bert_jsonl'
+  bert_jsonl = 'jsonlb'
   ALL_FORMATS = [jsonl, bert_jsonl]
 
+def get_filename(data_home, dataset_name, dataset_split, format_name):
+  return os.path.join(data_home, 'processed', dataset_name,
+      dataset_split + "." + format_name)
 
 NO_SPEAKER = "NO_SPEAKER"
 
@@ -47,6 +57,8 @@ def dataset_from_gap(filename):
   
   dataset = Dataset(DatasetName.gap)
 
+
+  print(filename)
   with open(filename, 'r') as tsvfile:
     for row in csv.DictReader(tsvfile, delimiter='\t'):
       curr_document = Document(make_doc_id(DatasetName.gap, row["ID"]))
@@ -65,9 +77,7 @@ def dataset_from_preco(filename):
   dataset = Dataset(DatasetName.preco)
   
   for line in get_lines_from_file(filename):
-    print(line)
     orig_document = json.loads(line)
-    print(orig_document)
     new_document = Document(
         make_doc_id(DatasetName.preco, orig_document["id"]))
     new_document.sentences = orig_document["sentences"]
@@ -84,7 +94,8 @@ def dataset_from_red():
 
 def dataset_from_wikicoref(filename):
  
-  dataset = Dataset(DatasetName.wikicoref)
+  dataset_name = DatasetName.wikicoref
+  dataset = Dataset(dataset_name)
 
   document_counter = 0
 
@@ -104,7 +115,6 @@ def dataset_from_wikicoref(filename):
       curr_doc = Document(curr_doc_id)
     else:
       fields = line.split()
-      print(fields)
       if not fields:
         if curr_sent:
           add_sentence(curr_doc, curr_sent)
