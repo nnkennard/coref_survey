@@ -1,6 +1,7 @@
 import csv
 import json
 import nltk
+from nltk.tokenize import sent_tokenize, word_tokenize
 
 class DatasetName(object):
   conll = 'conll'
@@ -19,8 +20,10 @@ class FormatName(object):
 
 NO_SPEAKER = "NO_SPEAKER"
 
-def make_doc_id(dataset, name_tokens):
-  return "_".join([dataset] + name_tokens)
+def make_doc_id(dataset, doc_name):
+  if type(doc_name) == list:
+    doc_name = "_".join(doc_name)
+  return "_".join([dataset, doc_name])
 
 
 def get_lines_from_file(filename):
@@ -33,6 +36,9 @@ def add_sentence(curr_doc, curr_sent):
   curr_doc.sentences.append(words)
   curr_doc.speakers.append(speakers)
 
+def make_empty_speakers(sentences):
+  return [[NO_SPEAKER for token in sent] for sent in sentences]
+
 
 def dataset_from_conll():
   pass
@@ -43,14 +49,35 @@ def dataset_from_gap(filename):
 
   with open(filename, 'r') as tsvfile:
     for row in csv.DictReader(tsvfile, delimiter='\t'):
-      print(row)
-      break
+      curr_document = Document(make_doc_id(DatasetName.gap, row["ID"]))
+      curr_document.sentences = [
+          word_tokenize(sent) for sent in sent_tokenize(row["Text"])]
+      curr_document.speakers = make_empty_speakers(curr_document.sentences)
+      dataset.documents.append(curr_document)
+
+  return dataset
 
 def dataset_from_knowref():
   pass
 
-def dataset_from_preco():
-  pass
+def dataset_from_preco(filename):
+
+  dataset = Dataset(DatasetName.preco)
+  
+  for line in get_lines_from_file(filename):
+    print(line)
+    orig_document = json.loads(line)
+    print(orig_document)
+    new_document = Document(
+        make_doc_id(DatasetName.preco, orig_document["id"]))
+    new_document.sentences = orig_document["sentences"]
+    new_document.speakers = make_empty_speakers(new_document.sentences)
+    new_document.clusters = orig_document["mention_clusters"]
+    dataset.documents.append(new_document)
+
+  return dataset
+
+
 
 def dataset_from_red():
   pass
@@ -86,9 +113,6 @@ def dataset_from_wikicoref(filename):
           word = fields[3]
           curr_sent.append((word, NO_SPEAKER))
   return dataset
-
-
-
 
 class Dataset(object):
   def __init__(self, dataset_name):
