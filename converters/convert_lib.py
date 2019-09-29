@@ -211,6 +211,7 @@ class Document(object):
 
   def dump_to_jsonl(self):
     return json.dumps({
+          "doc_key": "nw",
           "document_id": self.doc_id,
           "sentences": self.sentences,
           "speakers": self.speakers,
