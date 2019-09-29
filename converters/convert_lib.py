@@ -54,10 +54,7 @@ def dataset_from_conll():
   pass
 
 def dataset_from_gap(filename):
-  
   dataset = Dataset(DatasetName.gap)
-
-
   print(filename)
   with open(filename, 'r') as tsvfile:
     for row in csv.DictReader(tsvfile, delimiter='\t'):

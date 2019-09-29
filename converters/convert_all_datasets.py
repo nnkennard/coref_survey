@@ -50,7 +50,8 @@ INPUT_FUNCTIONS = {
 def main():
   data_home = sys.argv[1]
   datasets = {}
-  for dataset in [convert_lib.DatasetName.gap,
+  for dataset in [
+      convert_lib.DatasetName.gap,
       convert_lib.DatasetName.wikicoref,
       convert_lib.DatasetName.preco
       ]:
