@@ -1,3 +1,4 @@
+import collections
 import csv
 import json
 import nltk
@@ -53,15 +54,76 @@ def make_empty_speakers(sentences):
 def dataset_from_conll():
   pass
 
+def char_to_tok_idx(text, char_indices):
+  text = text.replace(
+      "''", "``").replace("'", "`").replace("Kasthuri/Lalitha",
+  "Kasthuri Lalitha").replace("N.J.Parvathy", "N.J Parvathy").replace(
+      "Burch/Joe", "Burch Joe").replace("Punjab.He", "Punjab He"
+          ).replace("Hanks/Sally", "Hanks Sally").replace("Down-on-his-luck",
+              "Down-on his luck").replace("edal.She", "edal She"
+                  ).replace("Medeim/Raisa", "Medeim Raisa"
+                      ).replace("Glen/Glenda", "Glen Glenda"
+                          ).replace("Ask-Elizabeth", "Ask Elizabeth")
+
+  print("*" * 80)
+  print(text)
+  print(len(text))
+  print(char_indices)
+  tokens = sum([word_tokenize(sent) for sent in sent_tokenize(text)], [])
+  print(tokens)
+  orig_text_counter = 0
+  index_map = collections.OrderedDict()
+  for i, token in enumerate(tokens):
+    print(i, token, orig_text_counter)
+    assert text[orig_text_counter:orig_text_counter + len(token)] == token
+    index_map[orig_text_counter] = i
+    orig_text_counter += len(token)
+    if i == len(tokens) - 1:
+      break
+    while True:
+      next_token = tokens[i+1]
+      next_token_len = len(next_token)
+      if next_token == text[orig_text_counter:orig_text_counter+next_token_len]:
+        break
+      else:
+        assert text[orig_text_counter].isspace()
+        orig_text_counter += 1
+
+  token_indices = []
+  for mention_text, char_idx in char_indices.items():
+    start_index = int(char_idx)
+    end_char_index = start_index + len(mention_text)
+    prev_index = start_index
+    end_index = start_index
+    for maybe_end_index in index_map:
+      if maybe_end_index > end_char_index:
+        end_index = prev_index
+        break
+      prev_index = maybe_end_index
+    token_indices.append((index_map[start_index], index_map[end_index]))
+
+  return token_indices
+
+
 def dataset_from_gap(filename):
   dataset = Dataset(DatasetName.gap)
   print(filename)
   with open(filename, 'r') as tsvfile:
     for row in csv.DictReader(tsvfile, delimiter='\t'):
       curr_document = Document(make_doc_id(DatasetName.gap, row["ID"]))
+      (pronoun_indices, a_indices, b_indices) = char_to_tok_idx(row["Text"],
+        {row["Pronoun"]: row["Pronoun-offset"],
+         row["A"]: row["A-offset"],
+         row["B"]: row["B-offset"]})
+      true_cluster = [pronoun_indices]
+      if bool(row["A-coref"]):
+        true_cluster.append(a_indices)
+      if bool(row["B-coref"]):
+        true_cluster.append(b_indices)
       curr_document.sentences = [
           word_tokenize(sent) for sent in sent_tokenize(row["Text"])]
       curr_document.speakers = make_empty_speakers(curr_document.sentences)
+      curr_document.clusters = [true_cluster]
       dataset.documents.append(curr_document)
 
   return dataset
