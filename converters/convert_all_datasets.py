@@ -37,8 +37,11 @@ def write_to_format(data_home, dataset, dataset_name, split, format_name):
   print("Writing ", dataset_name, " to format ", format_name)
   output_filename = convert_lib.get_filename(
       data_home, dataset_name, split, format_name)
-  with open(output_filename, 'w') as f:
-    f.write(dataset.DUMP_FUNCTIONS[format_name]())
+  if format_name == convert_lib.FormatName.jsonl:
+    with open(output_filename, 'w') as f:
+      f.write(dataset.DUMP_FUNCTIONS[format_name]())
+  else:
+    dataset.DUMP_FUNCTIONS[format_name](output_filename)
 
 
 INPUT_FUNCTIONS = {
@@ -58,8 +61,10 @@ def main():
     datasets.update(INPUT_FUNCTIONS[dataset](data_home))
 
   for (dataset_name, split), dataset in datasets.items():
+    #write_to_format(data_home, dataset, dataset_name, split,
+    #    convert_lib.FormatName.jsonl)
     write_to_format(data_home, dataset, dataset_name, split,
-        convert_lib.FormatName.jsonl)
+        convert_lib.FormatName.stanford)
 
 
 if __name__ == "__main__":

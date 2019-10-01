@@ -25,7 +25,8 @@ class DatasetSplit(object):
 class FormatName(object):
   jsonl = 'jsonl'
   jsonlb = 'jsonlb'
-  ALL_FORMATS = [jsonl, jsonlb]
+  stanford = 'stanford'
+  ALL_FORMATS = [jsonl, jsonlb, stanford]
 
 def get_filename(data_home, dataset_name, dataset_split, format_name):
   return os.path.join(data_home, 'processed', dataset_name,
@@ -199,6 +200,7 @@ def dataset_from_wikicoref(filename):
   dataset.documents.append(curr_doc)
   return dataset
 
+
 class Dataset(object):
   def __init__(self, dataset_name):
     self.name = dataset_name
@@ -206,15 +208,19 @@ class Dataset(object):
 
     self.DUMP_FUNCTIONS = {
       FormatName.jsonl: self.dump_to_jsonl,
-      FormatName.jsonlb: self.dump_to_jsonlb
+      FormatName.jsonlb: self.dump_to_jsonlb,
+      FormatName.stanford: self.write_to_stanford_files
       }
 
   def dump_to_jsonl(self):
     return "\n".join(doc.dump_to_jsonl() for doc in self.documents)
 
-  def dump_to_jsonlb(self, ):
-    pass
-
+  def write_to_stanford_files(self, path):
+    for document in self.documents:
+      filename = os.path.join(path, document.doc_id + ".txt")
+      with open(filename, 'w') as f:
+        for sentence in document.sentences:
+          f.write(" ".join(sentence) + "\n")
 
 
 class Document(object):
