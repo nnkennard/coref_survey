@@ -66,16 +66,10 @@ def char_to_tok_idx(text, char_indices):
                       ).replace("Glen/Glenda", "Glen Glenda"
                           ).replace("Ask-Elizabeth", "Ask Elizabeth")
 
-  print("*" * 80)
-  print(text)
-  print(len(text))
-  print(char_indices)
   tokens = sum([word_tokenize(sent) for sent in sent_tokenize(text)], [])
-  print(tokens)
   orig_text_counter = 0
   index_map = collections.OrderedDict()
   for i, token in enumerate(tokens):
-    print(i, token, orig_text_counter)
     assert text[orig_text_counter:orig_text_counter + len(token)] == token
     index_map[orig_text_counter] = i
     orig_text_counter += len(token)
@@ -108,7 +102,6 @@ def char_to_tok_idx(text, char_indices):
 
 def dataset_from_gap(filename):
   dataset = Dataset(DatasetName.gap)
-  print(filename)
   with open(filename, 'r') as tsvfile:
     for row in csv.DictReader(tsvfile, delimiter='\t'):
       curr_document = Document(make_doc_id(DatasetName.gap, row["ID"]))
@@ -190,7 +183,6 @@ class Dataset(object):
 
     self.DUMP_FUNCTIONS = {
       FormatName.jsonl: self.dump_to_jsonl,
-      FormatName.jsonlb: self.dump_to_jsonlb,
       FormatName.stanford: self.write_to_stanford_files
       }
 
