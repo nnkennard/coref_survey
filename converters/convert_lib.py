@@ -135,9 +135,21 @@ def dataset_from_preco(filename):
     orig_document = json.loads(line)
     new_document = Document(
         make_doc_id(DatasetName.preco, orig_document["id"]))
-    new_document.sentences = orig_document["sentences"]
+    sentence_offsets = []
+    token_count = 0
+    new_document.sentences = []
+    for sentence in orig_document["sentences"]:
+      sentence_offsets.append(token_count)
+      token_count += len(sentence)
+      new_document.sentences.append([token.encode('utf-8') for token in sentence])
     new_document.speakers = make_empty_speakers(new_document.sentences)
-    new_document.clusters = orig_document["mention_clusters"]
+    new_document.clusters = []
+    for cluster in orig_document["mention_clusters"]:
+      new_cluster = []
+      for sentence, begin, end in cluster:
+        new_cluster.append([sentence_offsets[sentence] + begin,
+          sentence_offsets[sentence] + end])
+      new_document.clusters.append(new_cluster)
     dataset.documents.append(new_document)
 
   return dataset
@@ -175,7 +187,7 @@ def dataset_from_wikicoref(filename):
         curr_doc.clusters = list(all_spans.values())
         all_spans = collections.defaultdict(list)
         dataset.documents.append(curr_doc)
-      curr_doc_id = make_doc_id(dataset_name, line.split()[3:])
+      curr_doc_id = make_doc_id(dataset_name, line.split()[2:])
       curr_doc = Document(curr_doc_id)
       sentence_offset = 0
     else:
@@ -208,7 +220,6 @@ class Dataset(object):
 
     self.DUMP_FUNCTIONS = {
       FormatName.jsonl: self.dump_to_jsonl,
-      FormatName.jsonlb: self.dump_to_jsonlb,
       FormatName.stanford: self.write_to_stanford_files
       }
 

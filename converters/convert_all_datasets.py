@@ -56,13 +56,13 @@ def main():
   for dataset in [
       #convert_lib.DatasetName.gap,
       convert_lib.DatasetName.wikicoref,
-      #convert_lib.DatasetName.preco
+      convert_lib.DatasetName.preco
       ]:
     datasets.update(INPUT_FUNCTIONS[dataset](data_home))
 
   for (dataset_name, split), dataset in datasets.items():
-    #write_to_format(data_home, dataset, dataset_name, split,
-    #    convert_lib.FormatName.jsonl)
+    write_to_format(data_home, dataset, dataset_name, split,
+        convert_lib.FormatName.jsonl)
     write_to_format(data_home, dataset, dataset_name, split,
         convert_lib.FormatName.stanford)
 
