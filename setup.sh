@@ -1,1 +1,1 @@
-export DATA_PATH="/iesl/canvas/nnayak/coref_datasets/"
+export DATA_PATH="/home/nnayak/ood_coref/datasets/coref_datasets/"

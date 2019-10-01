@@ -1,3 +1,5 @@
+import conll_lib
+
 import collections
 import csv
 import json
@@ -30,7 +32,7 @@ def get_filename(data_home, dataset_name, dataset_split, format_name):
   return os.path.join(data_home, 'processed', dataset_name,
       dataset_split + "." + format_name)
 
-NO_SPEAKER = "NO_SPEAKER"
+NO_SPEAKER = "-"
 
 def make_doc_id(dataset, doc_name):
   if type(doc_name) == list:
@@ -133,9 +135,21 @@ def dataset_from_preco(filename):
     orig_document = json.loads(line)
     new_document = Document(
         make_doc_id(DatasetName.preco, orig_document["id"]))
-    new_document.sentences = orig_document["sentences"]
+    sentence_offsets = []
+    token_count = 0
+    new_document.sentences = []
+    for sentence in orig_document["sentences"]:
+      sentence_offsets.append(token_count)
+      token_count += len(sentence)
+      new_document.sentences.append([token.encode('utf-8') for token in sentence])
     new_document.speakers = make_empty_speakers(new_document.sentences)
-    new_document.clusters = orig_document["mention_clusters"]
+    new_document.clusters = []
+    for cluster in orig_document["mention_clusters"]:
+      new_cluster = []
+      for sentence, begin, end in cluster:
+        new_cluster.append([sentence_offsets[sentence] + begin,
+          sentence_offsets[sentence] + end])
+      new_document.clusters.append(new_cluster)
     dataset.documents.append(new_document)
 
   return dataset
@@ -145,15 +159,24 @@ def dataset_from_preco(filename):
 def dataset_from_red():
   pass
 
+
+def ldd_append(ldd, to_append):
+  for k, v in to_append.items():
+    ldd[k] += v
+  return ldd
+
 def dataset_from_wikicoref(filename):
  
   dataset_name = DatasetName.wikicoref
   dataset = Dataset(dataset_name)
 
   document_counter = 0
+  sentence_offset = 0
 
   curr_doc = None
   curr_sent = []
+  curr_sent_orig_coref_labels = []
+  all_spans = collections.defaultdict(list)
 
   for line in get_lines_from_file(filename):
 
@@ -161,18 +184,32 @@ def dataset_from_wikicoref(filename):
       continue
     elif line.startswith("#begin"):
       if curr_doc is not None:
+        curr_doc.clusters = list(all_spans.values())
+        all_spans = collections.defaultdict(list)
         dataset.documents.append(curr_doc)
-      curr_doc_id = make_doc_id(dataset_name, line.split()[3:])
+      curr_doc_id = make_doc_id(dataset_name, line.split()[2:])
       curr_doc = Document(curr_doc_id)
+      sentence_offset = 0
     else:
       fields = line.split()
       if not fields:
         if curr_sent:
           add_sentence(curr_doc, curr_sent)
+          coref_spans = conll_lib.get_spans_from_conll(curr_sent_orig_coref_labels,
+            sentence_offset)
+          all_spans = ldd_append(all_spans, coref_spans)
+          sentence_offset += len(curr_sent)
           curr_sent = []
+          curr_sent_orig_coref_labels = []
       else:
           word = fields[3]
+          coref_label = fields[4]
+          curr_sent_orig_coref_labels.append(coref_label)
           curr_sent.append((word, NO_SPEAKER))
+
+  curr_doc.clusters = list(all_spans.values())
+  all_spans = collections.defaultdict(list)
+  dataset.documents.append(curr_doc)
   return dataset
 
 
