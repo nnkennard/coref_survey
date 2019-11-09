@@ -24,8 +24,4 @@ def get_spans_from_conll(coref_col, offset):
   for start, end, cluster in complete_spans:
     span_dict[cluster].append((offset + start, offset + end))
 
-
   return span_dict
-
-
-
