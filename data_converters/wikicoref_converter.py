@@ -70,12 +70,12 @@ def create_dataset(filename):
   all_spans = collections.defaultdict(list)
   dataset.documents.append(curr_doc)
 
-  print(curr_doc.sentences)
   return dataset
 
 
 def convert(data_home):
   output_directory = os.path.join(data_home, "processed", "wikicoref", "test")
+  convert_lib.create_processed_data_dir(output_directory)
   test_set = os.path.join(
     data_home, "original", "WikiCoref", "Evaluation", "key-OntoNotesScheme")
   converted_dataset = create_dataset(test_set)

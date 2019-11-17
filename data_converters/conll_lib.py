@@ -25,3 +25,35 @@ def get_spans_from_conll(coref_col, offset):
     span_dict[cluster].append((offset + start, offset + end))
 
   return span_dict
+
+
+def split_parse_label(label):
+  curr_chunk = ""
+  chunks = []
+  for c in label:
+    if c in "()":
+      if curr_chunk:
+        chunks.append(curr_chunk)
+      curr_chunk = c
+    else:
+      curr_chunk += c
+  chunks.append(curr_chunk)
+  return chunks
+
+
+def get_parse_spans_from_conll(parse_col):
+  span_starts = collections.defaultdict(list)
+  stack = []
+  label_map = {}
+  for i, orig_label in enumerate(parse_col):
+    labels = split_parse_label(orig_label)
+    for label in labels:
+      if label.endswith(")"):
+        span_start, start_idx = stack.pop(0)
+        assert (span_start, i) not in label_map
+        label_map[(start_idx, i)] = span_start + label
+      elif label.startswith("("):
+        stack.insert(0, [label, i])
+      else:
+        stack[0][0] += label
+  return label_map 

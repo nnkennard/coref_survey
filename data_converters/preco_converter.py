@@ -45,9 +45,9 @@ def create_dataset(filename):
 def convert(data_home):
   preco_directory = os.path.join(data_home, "original", "PreCo_1.0")
   output_directory = os.path.join(data_home, "processed", PRECO)
+  convert_lib.create_processed_data_dir(output_directory)
   preco_datasets = {}
   for split in [convert_lib.DatasetSplit.train, convert_lib.DatasetSplit.dev]:
-    print(split)
     input_filename = os.path.join(preco_directory, split + "." +
         convert_lib.FormatName.jsonl)
     converted_dataset = create_dataset(input_filename)

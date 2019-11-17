@@ -111,6 +111,7 @@ def create_dataset(filename):
 def convert(data_home):
   gap_directory = os.path.join(data_home, "original", "GAP", "gap-coreference")
   output_directory = os.path.join(data_home, "processed", "gap")
+  convert_lib.create_processed_data_dir(output_directory)
 
   gap_datasets = {}
 
