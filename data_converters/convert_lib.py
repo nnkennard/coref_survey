@@ -65,19 +65,17 @@ def create_maps(subword_list, segment_idx, running_token_idx, speaker):
                             for local_token_idx, token_subwords in enumerate(subword_list)]
     running_token_idx += len(subword_list)
 
-    print(subword_list)
-    print(subword_to_word)
     subword_to_word_flat = sum(subword_to_word, [])
     subword_to_word_flat = [0] + subword_to_word_flat + [subword_to_word_flat[-1]]
     subword_list_flat = [CLS] + sum(subword_list, []) + [SEP]
     subword_to_segment = [segment_idx] * len(subword_list_flat)
-    print(subword_to_word_flat)
 
-    speaker_list = [speaker] * len(subword_to_segment)    
+    speaker_list = [""] * len(subword_to_segment)    
 
     return (subword_list_flat, speaker_list, subword_to_segment, subword_to_word_flat, running_token_idx)
 
 
+_maybe_unused = """
 def subdivide_sentence_by_segment_length(tokens, max_segment_len):
     segments = []
     subtoken_list = [tokenizer.tokenize(token) for token in tokens]
@@ -93,42 +91,7 @@ def subdivide_sentence_by_segment_length(tokens, max_segment_len):
             curr_segment_subtokens += len(token_subtokens)
     segments.append(curr_segment)
     return segments
-
-_garbage_maybe = """
-def bert_tokenize_example(example):
-    for sentence in example["sentences"]:
-        print("Sentence: ", sentence)
-        assert len(set(speakers)) == 1
-        (speaker, ) = set(speakers)
-
-        segments = subdivide_sentence_by_segment_length(sentence, max_segment_len)
-
-        bert_example = {
-            "clusters": example["clusters"],
-            "doc_key": example["doc_key"],
-            "sentences": [],
-            "speakers": [],
-            "sentence_map": [], 
-            "subtoken_map": []
-        }
-
-        
-        running_token_idx = 0
-        for i, segment in enumerate(segments):
-            print(segment)
-            (
-                subword_list_flat,
-                speaker_list,
-                subword_to_segment,
-                subword_to_word_flat,
-                running_token_idx) = create_maps(segment, i, running_token_idx, speaker)
-            bert_example["sentences"].append(subword_list_flat)
-            bert_example["speakers"].append(speaker_list)
-            bert_example["sentence_map"].append(subword_to_segment)
-            bert_example["subtoken_map"].append(subword_to_word_flat)
-    return bert_example
 """
-
 
 
 class Dataset(object):
@@ -202,37 +165,39 @@ class Document(object):
       segments.append(curr_segment)
       return segments
 
+
   def calculate_subtokens(self):
     assert self.sentences
     sentences = []
-    speakers = []
+    new_speakers = []
     sentence_map = []
     subtoken_map = []
     running_token_idx = 0
+    segment_idx = 0
     for sentence, speakers in zip(self.sentences, self.speakers):
       print("Sentence: ", sentence)
       segments = self._subdivide_sentence_by_segment_length(sentence)
       assert len(set(speakers)) == 1
       speaker, = set(speakers)
-      for i, segment in enumerate(segments):
+      for segment in segments:
           (
               subword_list_flat,
               speaker_list,
               subword_to_segment,
               subword_to_word_flat,
-              running_token_idx) = create_maps(segment, i, running_token_idx, speaker)
+              running_token_idx) = create_maps(segment, segment_idx, running_token_idx, speaker)
           sentences.append(subword_list_flat)
-          speakers.append(speaker_list)
-          sentence_map.append(subword_to_segment)
+          new_speakers.append(speaker_list)
+          sentence_map += subword_to_segment
           subtoken_map.append(subword_to_word_flat)
+          segment_idx += 1
 
     self.token_sentences = self.sentences
     self.sentences = sentences
     self.sentence_map = sentence_map
     self.subtoken_map = subtoken_map
- 
-    
-      
+    self.speakers = new_speakers
+
 
   def dump_to_jsonl(self):
     if self.subtoken_map is None:
