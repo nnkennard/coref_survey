@@ -75,25 +75,6 @@ def create_maps(subword_list, segment_idx, running_token_idx, speaker):
     return (subword_list_flat, speaker_list, subword_to_segment, subword_to_word_flat, running_token_idx)
 
 
-_maybe_unused = """
-def subdivide_sentence_by_segment_length(tokens, max_segment_len):
-    segments = []
-    subtoken_list = [tokenizer.tokenize(token) for token in tokens]
-    curr_segment = []
-    curr_segment_subtokens = 0
-    for token_subtokens in subtoken_list:
-        if curr_segment_subtokens + len(token_subtokens) > max_segment_len:
-            segments.append(curr_segment)
-            curr_segment = [token_subtokens]
-            curr_segment_subtokens = len(token_subtokens)
-        else:
-            curr_segment.append(token_subtokens)
-            curr_segment_subtokens += len(token_subtokens)
-    segments.append(curr_segment)
-    return segments
-"""
-
-
 class Dataset(object):
   def __init__(self, dataset_name):
     self.name = dataset_name
@@ -116,6 +97,11 @@ class Dataset(object):
     for doc in tqdm.tqdm(self.documents):
       with open(directory + "/" + doc.doc_id + "_" + doc.doc_part + ".txt", 'w') as f:
         f.write("\n".join(doc.dump_to_stanford()))
+
+  def remove_singletons(self):
+    for doc in self.documents:
+      doc.remove_singletons()
+
 
 class Document(object):
   def __init__(self, doc_id, doc_part):
@@ -166,6 +152,15 @@ class Document(object):
       return segments
 
 
+  def remove_singletons(self):
+    new_clusters = []
+    for cluster in self.clusters:
+      if len(cluster) > 1:
+        new_clusters.append(cluster)
+    self.clusters = new_clusters
+    if self.subtoken_map is not None:
+      self.calculate_subtokens()
+
   def calculate_subtokens(self):
     assert self.sentences
     sentences = []
@@ -175,7 +170,6 @@ class Document(object):
     running_token_idx = 0
     segment_idx = 0
     for sentence, speakers in zip(self.sentences, self.speakers):
-      print("Sentence: ", sentence)
       segments = self._subdivide_sentence_by_segment_length(sentence)
       assert len(set(speakers)) == 1
       speaker, = set(speakers)

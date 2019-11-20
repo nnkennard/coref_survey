@@ -68,7 +68,7 @@ def create_dataset(filename):
 
   return dataset
 
-def resplit(preco_directory, output_directory):
+def resplit(preco_directory, resplit_directory):
   random.seed(43)
   train_lines_file = preco_directory + "/train.jsonl"
   with open(train_lines_file, 'r') as f:
@@ -79,22 +79,38 @@ def resplit(preco_directory, output_directory):
   traintrain_lines = train_lines[:partition]
   traindev_lines = train_lines[partition:]
 
-  for filename, lines in [
-      ("preco_traintrain.jsonl", traintrain_lines),
-      ("preco_traindev.jsonl", traindev_lines)]:
-    with open(output_directory + "/" + filename, 'w') as f:
+  for dataset_split, lines in [
+      (convert_lib.DatasetSplit.train, traintrain_lines),
+      (convert_lib.DatasetSplit.dev, traindev_lines)]:
+    with open(resplit_directory + "/" + dataset_split + ".jsonl", 'w') as f:
       f.write("".join(lines))
+
+  with open(train_lines_file.replace("train", "dev"), 'r') as f:
+    with open(resplit_directory + "/test.jsonl", 'w') as g:
+      g.write(f.read())
 
 def convert(data_home):
   preco_directory = os.path.join(data_home, "original", "PreCo_1.0")
+  resplit_directory = os.path.join(data_home, "processed", PRECO, "resplit")
+  convert_lib.create_processed_data_dir(resplit_directory)
   output_directory = os.path.join(data_home, "processed", PRECO)
   
-  resplit(preco_directory, output_directory)
+  resplit(preco_directory, resplit_directory)
 
   convert_lib.create_processed_data_dir(output_directory)
   preco_datasets = {}
-  for split in [convert_lib.DatasetSplit.train, convert_lib.DatasetSplit.dev]:
-    input_filename = os.path.join(output_directory, "preco_train" + split + "." +
+  for split in [convert_lib.DatasetSplit.train, convert_lib.DatasetSplit.dev,
+    convert_lib.DatasetSplit.test]:
+    input_filename = os.path.join(resplit_directory, split + "." +
         convert_lib.FormatName.jsonl)
     converted_dataset = create_dataset(input_filename)
     convert_lib.write_converted(converted_dataset, output_directory + "/" + split)
+    preco_datasets[split] = converted_dataset
+
+
+  mult_directory = output_directory.replace(PRECO, "preco_mult")
+  convert_lib.create_processed_data_dir(mult_directory)
+  for split, dataset in preco_datasets.items():
+    dataset.remove_singletons()
+    convert_lib.write_converted(dataset, mult_directory + "/" + split)
+    
