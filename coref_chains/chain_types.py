@@ -10,7 +10,38 @@ def get_lines_from_file(filename):
   with open(filename, 'r') as f:
     return f.readlines()
 
+class Mention(object):
+  def __init__(self, doc, part, entity, sentence, start, parse, tokens,
+                pos, ner, speaker):
+    self.doc = doc
+    self.part = part
+    self.entity = entity
+    self.mention_id = "_".join([doc, part, entity])
+
+    self.sentence = sentence
+    self.start = start
+    self.tokens = tokens
+
+    self.parse = parse
+    self.pos = pos
+    self.ner = ner
+    self.speaker = speaker
+
+  def __str__(self):
+    return "\t".join([self.doc,
+              self.part,
+              self.entity, str(self.sentence), str(self.start),
+              #"".join(self.parse).replace("*", ""),
+              self.parse.replace("*", ""),
+              " ".join(self.pos),
+              " ".join(self.tokens),
+              " ".join(self.ner).replace("*", "").replace(" ", ""),
+              self.speaker
+            ])
+
 def create_dataset(filename):
+
+  mentions_map = collections.defaultdict(list)
  
   dataset = convert_lib.Dataset(CONLL12)
 
@@ -19,7 +50,6 @@ def create_dataset(filename):
 
   curr_doc = None
   curr_doc_name = None
-  #curr_sent = []
   curr_sent_orig_labels = []
   all_spans = collections.defaultdict(list)
   sentence_idx = 0
@@ -32,7 +62,6 @@ def create_dataset(filename):
       # add sentence
       if curr_sent_orig_labels:
         (parts, tokens, pos, parse, speakers, ner, coref) = zip(*curr_sent_orig_labels)
-        #add_sentence(curr_doc, curr_sent)
         coref_spans = conll_lib.get_spans_from_conll(coref, 0)
         parse_spans = conll_lib.get_parse_spans_from_conll(parse)
 
@@ -41,16 +70,15 @@ def create_dataset(filename):
             assert len(set(parts)) == 1
             assert len(set(speakers)) == 1
             end = inclusive_end + 1 
+
             parse_label = parse_spans.get((start, inclusive_end), "_")
-            print("\t".join([curr_doc_id,
-              parts[0],
-              entity, str(sentence_idx), str(start),
-              parse_label.replace("*", ""),
-              " ".join(pos[start:end]),
-              " ".join(tokens[start:end]),
-              " ".join(ner[start:end]).replace("*", "").replace(" ", ""),
-              speakers[0]
-            ]))
+            mention_obj = Mention(curr_doc_id, parts[0], entity, sentence_idx,
+              start, parse_label, tokens[start:end], pos[start:end], ner[start:end],
+              speakers[0])
+  
+            mentions_map[mention_obj.mention_id].append(mention_obj)
+
+            
         sentence_idx += 1
 
       curr_sent = []
@@ -76,16 +104,44 @@ def create_dataset(filename):
       coref = fields[-1]
 
       curr_sent_orig_labels.append((part, token, pos, parse, speaker, ner, coref))
-      #curr_sent.append((word, convert_lib.NO_SPEAKER))
         
   curr_doc.clusters = list(all_spans.values())
   dataset.documents.append(curr_doc)
+
+
+  i = 0
+  for entity, mentions in mentions_map.items():
+    print(entity)
+    print(all_surface_forms(mentions))
+    print(canonical_mention(mentions))
+    i += 1
+    print()
+
+    if i == 1000:
+      break
+
+
   return dataset
+
+def all_surface_forms(mentions):
+  #return [" ".join(mention.tokens) for mention in mentions]
+  return ([" ".join(mention.tokens) for mention in mentions],
+          [" ".join(mention.ner) for mention in mentions],
+          [mention.parse for mention in mentions])
+
+def canonical_mention(mentions):
+  selected = 0, mentions[0]
+  for i, mention in enumerate(mentions):
+    ner_string = "".join(mention.ner)
+    if ner_string.startswith("(") and ner_string.endswith(")"):
+      selected = (i, mention)
+      break
+
+  return selected[0], " ".join(selected[1].tokens)
 
 
 def main():
   _ = create_dataset(sys.argv[1])
-
 
 
 if __name__ == "__main__":

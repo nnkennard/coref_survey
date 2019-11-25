@@ -8,7 +8,7 @@ import os
 
 from bert import tokenization
 VOCAB_FILE = "/home/nnayak/spanbert-coref-fork/cased_config_vocab/vocab.txt"
-MAX_SEGMENT_LEN = 512
+MAX_SEGMENT_LEN = 384
 TOKENIZER = tokenization.FullTokenizer(vocab_file=VOCAB_FILE, do_lower_case=False)
 
 class DatasetName(object):
@@ -60,21 +60,6 @@ SPL = "[SPL]"
 SEP = "[SEP]"
 
 
-def create_maps(subword_list, segment_idx, running_token_idx, speaker):
-    subword_to_word = [[local_token_idx + running_token_idx]* len(token_subwords)
-                            for local_token_idx, token_subwords in enumerate(subword_list)]
-    running_token_idx += len(subword_list)
-
-    subword_to_word_flat = sum(subword_to_word, [])
-    subword_to_word_flat = [0] + subword_to_word_flat + [subword_to_word_flat[-1]]
-    subword_list_flat = [CLS] + sum(subword_list, []) + [SEP]
-    subword_to_segment = [segment_idx] * len(subword_list_flat)
-
-    speaker_list = [""] * len(subword_to_segment)    
-
-    return (subword_list_flat, speaker_list, subword_to_segment, subword_to_word_flat, running_token_idx)
-
-
 class Dataset(object):
   def __init__(self, dataset_name):
     self.name = dataset_name
@@ -89,8 +74,8 @@ class Dataset(object):
   def dump_to_mconll(self, file_handle):
     self._dump_lines("mconll", file_handle)
 
-  def dump_to_jsonl(self, file_handle):
-    self._dump_lines("jsonl", file_handle)
+  def dump_to_jsonl(self, max_segment_len, file_handle):
+    self._dump_lines(str(max_segment_len) + ".jsonl", file_handle)
 
   def dump_to_stanford(self, directory):
     create_processed_data_dir(directory)
@@ -103,6 +88,45 @@ class Dataset(object):
       doc.remove_singletons()
 
 
+class TokenizedSentences(object):
+  def __init__(self, token_sentences, max_segment_len):
+    self.token_sentences = token_sentences
+    self.max_segment_len = max_segment_len
+    (self.segments, self.sentence_map, self.subtoken_map, self.speakers) = self._segment_sentences()
+
+  def _segment_sentences(self):
+    segments = []
+    curr_segment = []
+    sentence_map = []
+    subtoken_map = []
+    speakers = []
+    running_token_idx = 0
+
+    for i, sentence in enumerate(self.token_sentences):
+      subword_list = [TOKENIZER.tokenize(token) for token in sentence]
+      subword_list_flat = [CLS] + sum(subword_list, []) + [SEP]
+
+      subword_to_word = [[local_token_idx + running_token_idx]* len(token_subwords)
+                            for local_token_idx, token_subwords in enumerate(subword_list)]
+      speakers += [SPL] + [""] * len(sum(subword_to_word, [])) + [SPL]
+      subword_to_word_flat = [0] + sum(subword_to_word, []) + [subword_to_word[-1][-1]]
+      sentence_map += [i] * len(subword_list_flat)
+      subtoken_map += subword_to_word_flat
+
+
+      if len(subword_list_flat) + len(curr_segment) < self.max_segment_len:
+        curr_segment += subword_list_flat
+      else:
+        segments.append(curr_segment)
+        curr_segment = subword_list_flat
+
+
+      running_token_idx += len(subword_list)
+
+    return segments, sentence_map, subtoken_map, speakers
+
+
+
 class Document(object):
   def __init__(self, doc_id, doc_part):
     self.doc_id = doc_id
@@ -111,14 +135,22 @@ class Document(object):
     self.sentences = []
     self.speakers = []
     self.clusters = []
-    self.subtoken_map = None
-    self.sentence_map = None
-    self.token_sentences = None
+
+    self.bert_tokenized = False
+    self.tokenized_sentences = {}
+
     self.FN_MAP = {
       "mconll": self.dump_to_mconll,
-      "jsonl": self.dump_to_jsonl,
+      "512.jsonl": lambda: self.dump_to_jsonl(512),
+      "384.jsonl": lambda: self.dump_to_jsonl(384),
       "file_per_doc": self.dump_to_stanford}
 
+  def _bert_tokenize(self):
+    self.token_sentences = self.sentences
+    for max_segment_len in [384, 512]:
+      self.tokenized_sentences[max_segment_len] = TokenizedSentences(
+        self.token_sentences, max_segment_len)
+    self.bert_tokenized = True
 
   def apply_dump_fn(self, function):
     return self.FN_MAP[function]()
@@ -135,74 +167,24 @@ class Document(object):
 
     return coref_labels
 
-  def _subdivide_sentence_by_segment_length(self, tokens):
-      segments = []
-      subtoken_list = [TOKENIZER.tokenize(token) for token in tokens]
-      curr_segment = []
-      curr_segment_subtokens = 0
-      for token_subtokens in subtoken_list:
-          if curr_segment_subtokens + len(token_subtokens) > MAX_SEGMENT_LEN:
-              segments.append(curr_segment)
-              curr_segment = [token_subtokens]
-              curr_segment_subtokens = len(token_subtokens)
-          else:
-              curr_segment.append(token_subtokens)
-              curr_segment_subtokens += len(token_subtokens)
-      segments.append(curr_segment)
-      return segments
-
-
   def remove_singletons(self):
     new_clusters = []
     for cluster in self.clusters:
       if len(cluster) > 1:
         new_clusters.append(cluster)
     self.clusters = new_clusters
-    if self.subtoken_map is not None:
-      self.calculate_subtokens()
 
-  def calculate_subtokens(self):
-    assert self.sentences
-    sentences = []
-    new_speakers = []
-    sentence_map = []
-    subtoken_map = []
-    running_token_idx = 0
-    segment_idx = 0
-    for sentence, speakers in zip(self.sentences, self.speakers):
-      segments = self._subdivide_sentence_by_segment_length(sentence)
-      assert len(set(speakers)) == 1
-      speaker, = set(speakers)
-      for segment in segments:
-          (
-              subword_list_flat,
-              speaker_list,
-              subword_to_segment,
-              subword_to_word_flat,
-              running_token_idx) = create_maps(segment, segment_idx, running_token_idx, speaker)
-          sentences.append(subword_list_flat)
-          new_speakers.append(speaker_list)
-          sentence_map += subword_to_segment
-          subtoken_map.append(subword_to_word_flat)
-          segment_idx += 1
-
-    self.token_sentences = self.sentences
-    self.sentences = sentences
-    self.sentence_map = sentence_map
-    self.subtoken_map = subtoken_map
-    self.speakers = new_speakers
-
-
-  def dump_to_jsonl(self):
-    if self.subtoken_map is None:
-      self.calculate_subtokens()
+  def dump_to_jsonl(self, max_segment_len):
+    if not self.bert_tokenized:
+      self._bert_tokenize()
     return [json.dumps({
           "doc_key": self.doc_key,
           "document_id": self.doc_id + "_" + self.doc_part,
-          "sentences": self.sentences,
-          "sentence_map": self.sentence_map,
-          "subtoken_map": self.subtoken_map,
-          "speakers": self.speakers,
+          "token_sentences": self.token_sentences,
+          "sentences": self.tokenized_sentences[max_segment_len].segments,
+          "sentence_map": self.tokenized_sentences[max_segment_len].sentence_map,
+          "subtoken_map": self.tokenized_sentences[max_segment_len].subtoken_map,
+          "speakers": self.tokenized_sentences[max_segment_len].speakers,
           "clusters": self.clusters
         })]
 
@@ -238,7 +220,8 @@ def write_converted(dataset, prefix):
     print(prefix)
     with open(prefix + ".mconll", 'w') as f:
       dataset.dump_to_mconll(f)
-    with open(prefix + ".jsonl", 'w') as f:
-      dataset.dump_to_jsonl(f)
+    for max_segment_len in [384, 512]:
+      with open(prefix + "." + str(max_segment_len) + ".jsonl", 'w') as f:
+        dataset.dump_to_jsonl(max_segment_len, f)
     dataset.dump_to_stanford(prefix + "-fpd/")
  
