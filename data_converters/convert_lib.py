@@ -64,6 +64,12 @@ class Dataset(object):
   def __init__(self, dataset_name):
     self.name = dataset_name
     self.documents = []
+    self.bert_tokenized = False
+
+  def _bert_tokenize(self):
+    for doc in tqdm.tqdm(self.documents):
+      doc._bert_tokenize()
+    self.bert_tokenized = True
 
   def _dump_lines(self, function, file_handle):
     lines = []
@@ -75,6 +81,8 @@ class Dataset(object):
     self._dump_lines("mconll", file_handle)
 
   def dump_to_jsonl(self, max_segment_len, file_handle):
+    if not self.bert_tokenized:
+      self._bert_tokenize()
     self._dump_lines(str(max_segment_len) + ".jsonl", file_handle)
 
   def dump_to_stanford(self, directory):
@@ -87,6 +95,11 @@ class Dataset(object):
     for doc in self.documents:
       doc.remove_singletons()
 
+def new_segment():
+  return [], [], [], []
+
+def flatten(l):
+  return sum(l, [])
 
 class TokenizedSentences(object):
   def __init__(self, token_sentences, max_segment_len):
@@ -95,35 +108,38 @@ class TokenizedSentences(object):
     (self.segments, self.sentence_map, self.subtoken_map, self.speakers) = self._segment_sentences()
 
   def _segment_sentences(self):
-    segments = []
-    curr_segment = []
-    sentence_map = []
-    subtoken_map = []
-    speakers = []
+    sentences, sentence_map, subtoken_map, speakers = ([], [], [], [])
+    (segment_subtokens, segment_sentence_map, segment_subtoken_map,
+     segment_speakers) = new_segment()
     running_token_idx = 0
-
     for i, sentence in enumerate(self.token_sentences):
       subword_list = [TOKENIZER.tokenize(token) for token in sentence]
-      subword_list_flat = [CLS] + sum(subword_list, []) + [SEP]
+      subword_to_word = flatten([[local_token_idx + running_token_idx]* len(token_subwords)
+                            for local_token_idx, token_subwords in enumerate(subword_list)])
 
-      subword_to_word = [[local_token_idx + running_token_idx]* len(token_subwords)
-                            for local_token_idx, token_subwords in enumerate(subword_list)]
-      speakers += [SPL] + [""] * len(sum(subword_to_word, [])) + [SPL]
-      subword_to_word_flat = [0] + sum(subword_to_word, []) + [subword_to_word[-1][-1]]
-      sentence_map += [i] * len(subword_list_flat)
-      subtoken_map += subword_to_word_flat
+      sentence_subtokens = flatten(subword_list)
+      sentence_sentence_map = [i] * len(sentence_subtokens)
+      sentence_subtoken_map = subword_to_word
+      sentence_speakers = [""] * len(sentence_subtokens)
 
-
-      if len(subword_list_flat) + len(curr_segment) < self.max_segment_len:
-        curr_segment += subword_list_flat
+      if len(flatten(subword_list)) + len(segment_subtokens) + 2 < self.max_segment_len:
+        # Add to current segment
+        segment_subtokens += flatten(subword_list)
+        segment_sentence_map += sentence_sentence_map
+        segment_subtoken_map += sentence_subtoken_map
+        segment_speakers += sentence_speakers
       else:
-        segments.append(curr_segment)
-        curr_segment = subword_list_flat
-
+        sentences.append([CLS] + segment_subtokens + [SEP])
+        sentence_map += segment_sentence_map 
+        subtoken_map += [0] + segment_subtoken_map + [segment_subtoken_map[-1]]
+        speakers += [SPL] + segment_speakers + [SPL]
+        (segment_subtokens, segment_sentence_map, segment_subtoken_map,
+         segment_speakers) = (sentence_subtokens, sentence_sentence_map,
+         sentence_subtoken_map, sentence_speakers)
 
       running_token_idx += len(subword_list)
 
-    return segments, sentence_map, subtoken_map, speakers
+    return sentences, sentence_map, subtoken_map, speakers
 
 
 
@@ -175,10 +191,9 @@ class Document(object):
     self.clusters = new_clusters
 
   def dump_to_jsonl(self, max_segment_len):
-    if not self.bert_tokenized:
-      self._bert_tokenize()
+    assert self.bert_tokenized
     return [json.dumps({
-          "doc_key": self.doc_key,
+          "doc_key": self.doc_id + "_" + self.doc_part,
           "document_id": self.doc_id + "_" + self.doc_part,
           "token_sentences": self.token_sentences,
           "sentences": self.tokenized_sentences[max_segment_len].segments,
