@@ -11,13 +11,11 @@ VOCAB_FILE = "/home/nnayak/spanbert-coref-fork/cased_config_vocab/vocab.txt"
 TOKENIZER = tokenization.FullTokenizer(vocab_file=VOCAB_FILE, do_lower_case=False)
 
 class DatasetName(object):
-  conll12 = 'conll12' # TODO delete one of these later
+  conll12 = 'conll12' 
   gap = 'gap'
-  knowref = 'knowref'
   preco = 'preco'
-  red = 'red'
   wikicoref = 'wikicoref'
-  ALL_DATASETS = [conll12, gap, knowref, preco, red, wikicoref]
+  ALL_DATASETS = [conll12, gap, preco, wikicoref]
 
 class DatasetSplit(object):
   train = 'train'
@@ -43,7 +41,7 @@ def create_processed_data_dir(path):
   else:
       print ("Successfully created the directory %s " % path)
 
-NO_SPEAKER = "-"
+#NO_SPEAKER = "-"
 
 def make_doc_id(dataset, doc_name):
   if type(doc_name) == list:
@@ -51,8 +49,8 @@ def make_doc_id(dataset, doc_name):
   return "_".join([dataset, doc_name])
 
 
-def make_empty_speakers(sentences):
-  return [[NO_SPEAKER for token in sent] for sent in sentences]
+#def make_empty_speakers(sentences):
+#  return [[NO_SPEAKER for token in sent] for sent in sentences]
 
 CLS = "[CLS]"
 SPL = "[SPL]"
@@ -87,11 +85,11 @@ class Dataset(object):
       self._bert_tokenize()
     self._dump_lines(str(max_segment_len) + ".jsonl", file_handle)
 
-  def dump_to_stanford(self, directory):
+  def dump_to_fpd(self, directory):
     create_processed_data_dir(directory)
     for doc in tqdm.tqdm(self.documents):
       with open(directory + "/" + doc.doc_id + "_" + doc.doc_part + ".txt", 'w') as f:
-        f.write("\n".join(doc.dump_to_stanford()))
+        f.write("\n".join(doc.dump_to_fpd()))
 
   def remove_singletons(self):
     for doc in self.documents:
@@ -121,9 +119,9 @@ class TokenizedSentences(object):
       sentence_subtoken_map = subword_to_word
       sentence_speakers = [""] * len(sentence_subtokens)
 
-      if len(flatten(subword_list)) + len(segment_subtokens) + 2 < self.max_segment_len:
+      if len(sentence_subtokens) + len(segment_subtokens) + 2 < self.max_segment_len:
         # Add to current segment
-        segment_subtokens += flatten(subword_list)
+        segment_subtokens += sentence_subtokens
         segment_sentence_map += sentence_sentence_map
         segment_subtoken_map += sentence_subtoken_map
         segment_speakers += sentence_speakers
@@ -132,6 +130,7 @@ class TokenizedSentences(object):
         sentence_map += segment_sentence_map 
         subtoken_map += [0] + segment_subtoken_map + [segment_subtoken_map[-1]]
         speakers += [SPL] + segment_speakers + [SPL]
+
         (segment_subtokens, segment_sentence_map, segment_subtoken_map,
          segment_speakers) = (sentence_subtokens, sentence_sentence_map,
          sentence_subtoken_map, sentence_speakers)
@@ -169,9 +168,9 @@ class Document(object):
       "512.jsonl": lambda: self.dump_to_jsonl(512),
       "384.jsonl": lambda: self.dump_to_jsonl(384),
       "feat": self.dump_to_feat,
-      "file_per_doc": self.dump_to_stanford}
+      "file_per_doc": self.dump_to_fpd}
 
-  def dump_to_stanford(self):
+  def dump_to_fpd(self):
     return [" ".join(sentence) for sentence in self.sentences]
 
   def dump_to_feat(self):
@@ -180,29 +179,28 @@ class Document(object):
       for mention in cluster:
         features.append(self.featurize(mention))
 
-  def _get_sentence(self, start, end):
+  def _get_sentence_idx(self, start, end):
     token_count = 0
+    print(start, end)
     for sent_i, sentence in enumerate(self.sentences):
+      print(token_count, sentence)
       end_sentence_token_count = token_count + len(sentence)
-      if end_sentence_token_count < start:
+      print(end_sentence_token_count)
+      if end_sentence_token_count <= start:
         token_count = end_sentence_token_count
       elif end_sentence_token_count > start:
         assert end_sentence_token_count > end
         return sent_i, start - token_count
       else:
         assert False
-      
        
- 
   def featurize(self, mention):
-    sent_i, start_token = self._get_sentence(*mention)
-    for k, v in self.
+    sent_i, start_token = self._get_sentence_idx(*mention)
 
   def dump_to_mconll(self):
     document_name = self.doc_id
     coref_labels = self._get_conll_coref_labels()
     sent_start_tok_count = 0
-
 
     mconll_lines = ["#begin document " + document_name + "\n"] 
 
@@ -274,6 +272,6 @@ def write_converted(dataset, prefix):
     for max_segment_len in [384, 512]:
       with open(prefix + "." + str(max_segment_len) + ".jsonl", 'w') as f:
         dataset.dump_to_jsonl(max_segment_len, f)
-    dataset.dump_to_stanford(prefix + "-fpd/")
+    dataset.dump_to_fpd(prefix + "-fpd/")
     dataset.dump_to_feat(prefix + "-feat/")
  
