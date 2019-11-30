@@ -8,7 +8,6 @@ import os
 
 from bert import tokenization
 VOCAB_FILE = "/home/nnayak/spanbert-coref-fork/cased_config_vocab/vocab.txt"
-MAX_SEGMENT_LEN = 384
 TOKENIZER = tokenization.FullTokenizer(vocab_file=VOCAB_FILE, do_lower_case=False)
 
 class DatasetName(object):
@@ -80,6 +79,9 @@ class Dataset(object):
   def dump_to_mconll(self, file_handle):
     self._dump_lines("mconll", file_handle)
 
+  def dump_to_feat(self, file_handle):
+    self._dump_lines("feat", file_handle)
+
   def dump_to_jsonl(self, max_segment_len, file_handle):
     if not self.bert_tokenized:
       self._bert_tokenize()
@@ -95,9 +97,6 @@ class Dataset(object):
     for doc in self.documents:
       doc.remove_singletons()
 
-def new_segment():
-  return [], [], [], []
-
 def flatten(l):
   return sum(l, [])
 
@@ -110,7 +109,7 @@ class TokenizedSentences(object):
   def _segment_sentences(self):
     sentences, sentence_map, subtoken_map, speakers = ([], [], [], [])
     (segment_subtokens, segment_sentence_map, segment_subtoken_map,
-     segment_speakers) = new_segment()
+     segment_speakers) = ([], [], [], [])
     running_token_idx = 0
     for i, sentence in enumerate(self.token_sentences):
       subword_list = [TOKENIZER.tokenize(token) for token in sentence]
@@ -141,6 +140,13 @@ class TokenizedSentences(object):
 
     return sentences, sentence_map, subtoken_map, speakers
 
+class LabelSequences(object):
+  WORD = "WORD"
+  POS = "POS"
+  NER = "NER"
+  PARSE = "PARSE"
+  COREF = "COREF"
+  SPEAKER = "SPEAKER"
 
 
 class Document(object):
@@ -155,11 +161,69 @@ class Document(object):
     self.bert_tokenized = False
     self.tokenized_sentences = {}
 
+    self.label_sequences = {}
+    self.label_sequences_verified = False
+
     self.FN_MAP = {
       "mconll": self.dump_to_mconll,
       "512.jsonl": lambda: self.dump_to_jsonl(512),
       "384.jsonl": lambda: self.dump_to_jsonl(384),
+      "feat": self.dump_to_feat,
       "file_per_doc": self.dump_to_stanford}
+
+  def dump_to_stanford(self):
+    return [" ".join(sentence) for sentence in self.sentences]
+
+  def dump_to_feat(self):
+    features = []
+    for cluster in self.clusters:
+      for mention in cluster:
+        features.append(self.featurize(mention))
+
+  def _get_sentence(self, start, end):
+    token_count = 0
+    for sent_i, sentence in enumerate(self.sentences):
+      end_sentence_token_count = token_count + len(sentence)
+      if end_sentence_token_count < start:
+        token_count = end_sentence_token_count
+      elif end_sentence_token_count > start:
+        assert end_sentence_token_count > end
+        return sent_i, start - token_count
+      else:
+        assert False
+      
+       
+ 
+  def featurize(self, mention):
+    sent_i, start_token = self._get_sentence(*mention)
+    for k, v in self.
+
+  def dump_to_mconll(self):
+    document_name = self.doc_id
+    coref_labels = self._get_conll_coref_labels()
+    sent_start_tok_count = 0
+
+
+    mconll_lines = ["#begin document " + document_name + "\n"] 
+
+    for i_sent, sentence in enumerate(self.sentences):
+      for i_tok, token in enumerate(sentence):
+        coref_label_vals = coref_labels.get(sent_start_tok_count + i_tok)
+        if not coref_label_vals:
+          label = '-'  
+        else:
+          label = "|".join(coref_label_vals)
+        mconll_lines.append("\t".join([
+          self.doc_id, self.doc_part, str(i_tok), token, self.speakers[i_sent][i_tok], label]))
+      sent_start_tok_count += len(sentence)
+      mconll_lines.append("")
+
+    mconll_lines.append("\n#end document " + document_name + "\n")
+
+    return mconll_lines
+
+  def _verify_label_sequences(self):
+    pass
 
   def _bert_tokenize(self):
     self.token_sentences = self.sentences
@@ -203,40 +267,13 @@ class Document(object):
           "clusters": self.clusters
         })]
 
-  def dump_to_stanford(self):
-    return [" ".join(sentence) for sentence in self.sentences]
-
-     
-  def dump_to_mconll(self):
-    document_name = self.doc_id
-    coref_labels = self._get_conll_coref_labels()
-    sent_start_tok_count = 0
-
-    mconll_lines = ["#begin document " + document_name + "\n"] 
-
-    for i_sent, sentence in enumerate(self.sentences):
-      for i_tok, token in enumerate(sentence):
-        coref_label_vals = coref_labels.get(sent_start_tok_count + i_tok)
-        if not coref_label_vals:
-          label = '-'  
-        else:
-          label = "|".join(coref_label_vals)
-        mconll_lines.append("\t".join([
-          self.doc_id, self.doc_part, str(i_tok), token, self.speakers[i_sent][i_tok], label]))
-      sent_start_tok_count += len(sentence)
-      mconll_lines.append("")
-
-    mconll_lines.append("\n#end document " + document_name + "\n")
-
-    return mconll_lines
-
 
 def write_converted(dataset, prefix):
-    print(prefix)
     with open(prefix + ".mconll", 'w') as f:
       dataset.dump_to_mconll(f)
     for max_segment_len in [384, 512]:
       with open(prefix + "." + str(max_segment_len) + ".jsonl", 'w') as f:
         dataset.dump_to_jsonl(max_segment_len, f)
     dataset.dump_to_stanford(prefix + "-fpd/")
+    dataset.dump_to_feat(prefix + "-feat/")
  

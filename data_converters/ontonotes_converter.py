@@ -15,13 +15,11 @@ def get_lines_from_file(filename):
     return f.readlines()
 
 def add_sentence(curr_doc, curr_sent):
-  # This is definitely passed by reference right
-  words, speakers = zip(*curr_sent)
-  curr_doc.sentences.append(words)
-  curr_doc.speakers.append(speakers)
+  curr_doc.speakers.append(curr_sent[convert_lib.LabelSequences.SPEAKER])
+  curr_doc.sentences.append(curr_sent[convert_lib.LabelSequences.WORD])
 
 
-def create_dataset(filename):
+def create_dataset(filename, field_map):
  
   dataset = convert_lib.Dataset(CONLL12)
 
@@ -30,22 +28,26 @@ def create_dataset(filename):
 
   curr_doc = None
   curr_doc_name = None
-  curr_sent = []
-  curr_sent_orig_coref_labels = []
+  #curr_sent = []
+  curr_sent_labels = collections.defaultdict(list)
   all_spans = collections.defaultdict(list)
 
   for line in get_lines_from_file(filename):
 
+    if line.startswith("#"):
+      continue
+
     if not line.strip():
       # add sentence
-      if curr_sent:
-        add_sentence(curr_doc, curr_sent)
-        coref_spans = conll_lib.get_spans_from_conll(curr_sent_orig_coref_labels,
+      if curr_sent_labels:
+        add_sentence(curr_doc, curr_sent_labels)
+        coref_spans = conll_lib.get_spans_from_conll(
+            curr_sent_labels[convert_lib.LabelSequences.COREF],
             sentence_offset)
         all_spans = ldd_append(all_spans, coref_spans)
-        sentence_offset += len(curr_sent)
-      curr_sent = []
-      curr_sent_orig_coref_labels = []
+        sentence_offset += len(curr_sent_labels[convert_lib.LabelSequences.WORD])
+      #curr_sent = []
+      curr_sent_labels = collections.defaultdict(list)
     else:
       fields = line.split()
       # check for new doc
@@ -60,23 +62,30 @@ def create_dataset(filename):
         curr_doc_id = convert_lib.make_doc_id(CONLL12, doc_name)
         curr_doc = convert_lib.Document(curr_doc_id, part)
         sentence_offset = 0
-      
-      word = fields[3]
-      coref_label = fields[-1]
-      curr_sent_orig_coref_labels.append(coref_label)
-      curr_sent.append((word, convert_lib.NO_SPEAKER))
-        
+
+      for field_name, field_index in field_map.items():
+        curr_sent_labels[field_name].append(fields[field_index])
+
   curr_doc.clusters = list(all_spans.values())
   dataset.documents.append(curr_doc)
   return dataset
 
 
+ONTONOTES_FIELD_MAP = {
+  convert_lib.LabelSequences.WORD: 3,
+  convert_lib.LabelSequences.COREF: -1,
+  convert_lib.LabelSequences.POS: 4, 
+  convert_lib.LabelSequences.PARSE: 5, 
+  convert_lib.LabelSequences.SPEAKER: 9, 
+}
+
 def convert(data_home):
-  ontonotes_directory = os.path.join(data_home, "original", "CoNLL12/conll2012-")
+  ontonotes_directory = os.path.join(data_home, "original", "CoNLL12/flat/")
   output_directory = os.path.join(data_home, "processed", CONLL12)
   convert_lib.create_processed_data_dir(output_directory)
   ontonotes_datasets = {}
   for split in [convert_lib.DatasetSplit.train, convert_lib.DatasetSplit.dev]:
     input_filename = ''.join([ontonotes_directory, split, ".", convert_lib.FormatName.txt])
-    converted_dataset = create_dataset(input_filename)
+    converted_dataset = create_dataset(input_filename, ONTONOTES_FIELD_MAP)
+    print(dir(converted_dataset))
     convert_lib.write_converted(converted_dataset, output_directory + "/" + split)
