@@ -41,8 +41,6 @@ def create_processed_data_dir(path):
   else:
       print ("Successfully created the directory %s " % path)
 
-#NO_SPEAKER = "-"
-
 def make_doc_id(dataset, doc_name):
   if type(doc_name) == list:
     doc_name = "_".join(doc_name)
@@ -98,6 +96,25 @@ class Dataset(object):
 def flatten(l):
   return sum(l, [])
 
+class _SequenceObject(object):
+    def __init__(self, subtokens=[], sentence_map=[], subtoken_map=[], speakers=[]):
+      self.subtokens = subtokens
+      self.sentence_map = sentence_map
+      self.subtoken_map = subtoken_map
+      self.speakers = speakers
+    
+    def extend(self, subtokens, sentence_map, subtoken_map, speakers):
+      self.subtokens += subtokens
+      self.sentence_map += sentence_map
+      self.subtoken_map += subtoken_map
+      self.speakers += speakers
+
+    def attach_segment(self, segment):
+      self.subtokens.append([CLS] + segment.subtokens + [SEP])
+      self.sentence_map += segment.sentence_map 
+      self.subtoken_map += [0] + segment.subtoken_map + [segment.subtoken_map[-1]]
+      self.speakers.append([SPL] + segment.speakers + [SPL])
+
 class TokenizedSentences(object):
   def __init__(self, token_sentences, max_segment_len, speakers):
     self.token_sentences = token_sentences
@@ -108,48 +125,36 @@ class TokenizedSentences(object):
       assert len(set(sentence_speakers)) == 1
       self.per_sentence_speaker.append(sentence_speakers[0])
 
-    #self.speakers = []
     (self.segments, self.sentence_map, self.subtoken_map, self.speakers) = self._segment_sentences()
 
+  
   def _segment_sentences(self):
-    sentences, sentence_map, subtoken_map, speakers = ([], [], [], [])
-    (segment_subtokens, segment_sentence_map, segment_subtoken_map,
-     segment_speakers) = ([], [], [], [])
+    doc_sequences = _SequenceObject()
+    segment = _SequenceObject()
     running_token_idx = 0
     for i, sentence in enumerate(self.token_sentences):
       subword_list = [TOKENIZER.tokenize(token) for token in sentence]
       subword_to_word = flatten([[local_token_idx + running_token_idx]* len(token_subwords)
                             for local_token_idx, token_subwords in enumerate(subword_list)])
+      running_token_idx += len(subword_list)
 
       sentence_subtokens = flatten(subword_list)
       sentence_sentence_map = [i] * len(sentence_subtokens)
       sentence_subtoken_map = subword_to_word
       sentence_speakers = [self.per_sentence_speaker[i]] * len(sentence_subtokens)
 
-      if len(sentence_subtokens) + len(segment_subtokens) + 2 < self.max_segment_len:
-        # Add to current segment
-        segment_subtokens += sentence_subtokens
-        segment_sentence_map += sentence_sentence_map
-        segment_subtoken_map += sentence_subtoken_map
-        segment_speakers += sentence_speakers
+      if len(sentence_subtokens) + len(segment.subtokens) + 2 < self.max_segment_len:
+        segment.extend(sentence_subtokens, sentence_sentence_map, sentence_subtoken_map, sentence_speakers)
       else:
-        sentences.append([CLS] + segment_subtokens + [SEP])
-        sentence_map += segment_sentence_map 
-        subtoken_map += [0] + segment_subtoken_map + [segment_subtoken_map[-1]]
-        speakers.append([SPL] + segment_speakers + [SPL])
-
-        (segment_subtokens, segment_sentence_map, segment_subtoken_map,
-         segment_speakers) = (sentence_subtokens, sentence_sentence_map,
+        doc_sequences.attach_segment(segment)
+        segment = _SequenceObject(sentence_subtokens, sentence_sentence_map,
          sentence_subtoken_map, sentence_speakers)
 
-      running_token_idx += len(subword_list)
 
-    sentences.append([CLS] + segment_subtokens + [SEP])
-    sentence_map += segment_sentence_map 
-    subtoken_map += [0] + segment_subtoken_map + [segment_subtoken_map[-1]]
-    speakers.append([SPL] + segment_speakers + [SPL])
+    doc_sequences.attach_segment(segment)
 
-    return sentences, sentence_map, subtoken_map, speakers
+    return (doc_sequences.subtokens, doc_sequences.sentence_map,
+            doc_sequences.subtoken_map, doc_sequences.speakers)
 
 class LabelSequences(object):
   WORD = "WORD"
@@ -168,6 +173,7 @@ class Document(object):
     self.sentences = []
     self.speakers = []
     self.clusters = []
+    self.parse_spans = []
 
     self.bert_tokenized = False
     self.tokenized_sentences = {}
@@ -282,5 +288,4 @@ def write_converted(dataset, prefix):
       with open(prefix + "." + str(max_segment_len) + ".jsonl", 'w') as f:
         dataset.dump_to_jsonl(max_segment_len, f)
     dataset.dump_to_fpd(prefix + "-fpd/")
-    #dataset.dump_to_feat(prefix + "-feat/")
  
