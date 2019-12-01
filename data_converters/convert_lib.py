@@ -96,25 +96,6 @@ class Dataset(object):
 def flatten(l):
   return sum(l, [])
 
-class _SequenceObject(object):
-    def __init__(self, subtokens=[], sentence_map=[], subtoken_map=[], speakers=[]):
-      self.subtokens = subtokens
-      self.sentence_map = sentence_map
-      self.subtoken_map = subtoken_map
-      self.speakers = speakers
-    
-    def extend(self, subtokens, sentence_map, subtoken_map, speakers):
-      self.subtokens += subtokens
-      self.sentence_map += sentence_map
-      self.subtoken_map += subtoken_map
-      self.speakers += speakers
-
-    def attach_segment(self, segment):
-      self.subtokens.append([CLS] + segment.subtokens + [SEP])
-      self.sentence_map += segment.sentence_map 
-      self.subtoken_map += [0] + segment.subtoken_map + [segment.subtoken_map[-1]]
-      self.speakers.append([SPL] + segment.speakers + [SPL])
-
 class TokenizedSentences(object):
   def __init__(self, token_sentences, max_segment_len, speakers):
     self.token_sentences = token_sentences
@@ -129,8 +110,9 @@ class TokenizedSentences(object):
 
   
   def _segment_sentences(self):
-    doc_sequences = _SequenceObject()
-    segment = _SequenceObject()
+    sentences, sentence_map, subtoken_map, speakers = ([], [], [], [])
+    (segment_subtokens, segment_sentence_map, segment_subtoken_map,
+     segment_speakers) = ([], [], [], [])
     running_token_idx = 0
     for i, sentence in enumerate(self.token_sentences):
       subword_list = [TOKENIZER.tokenize(token) for token in sentence]
@@ -143,18 +125,28 @@ class TokenizedSentences(object):
       sentence_subtoken_map = subword_to_word
       sentence_speakers = [self.per_sentence_speaker[i]] * len(sentence_subtokens)
 
-      if len(sentence_subtokens) + len(segment.subtokens) + 2 < self.max_segment_len:
-        segment.extend(sentence_subtokens, sentence_sentence_map, sentence_subtoken_map, sentence_speakers)
+      if len(sentence_subtokens) + len(segment_subtokens) + 2 < self.max_segment_len:
+        segment_subtokens += sentence_subtokens
+        segment_sentence_map += sentence_sentence_map
+        segment_subtoken_map += sentence_subtoken_map
+        segment_speakers += sentence_speakers
       else:
-        doc_sequences.attach_segment(segment)
-        segment = _SequenceObject(sentence_subtokens, sentence_sentence_map,
+        sentences.append([CLS] + segment_subtokens + [SEP])
+        sentence_map += segment_sentence_map 
+        subtoken_map += [0] + segment_subtoken_map + [segment_subtoken_map[-1]]
+        speakers.append([SPL] + segment_speakers + [SPL])
+
+        (segment_subtokens, segment_sentence_map, segment_subtoken_map,
+         segment_speakers) = (sentence_subtokens, sentence_sentence_map,
          sentence_subtoken_map, sentence_speakers)
 
 
-    doc_sequences.attach_segment(segment)
+    sentences.append([CLS] + segment_subtokens + [SEP])
+    sentence_map += segment_sentence_map 
+    subtoken_map += [0] + segment_subtoken_map + [segment_subtoken_map[-1]]
+    speakers.append([SPL] + segment_speakers + [SPL])
 
-    return (doc_sequences.subtokens, doc_sequences.sentence_map,
-            doc_sequences.subtoken_map, doc_sequences.speakers)
+    return (sentences, sentence_map, subtoken_map, speakers)
 
 class LabelSequences(object):
   WORD = "WORD"
@@ -174,6 +166,7 @@ class Document(object):
     self.speakers = []
     self.clusters = []
     self.parse_spans = []
+    self.pos = []
 
     self.bert_tokenized = False
     self.tokenized_sentences = {}
@@ -277,7 +270,9 @@ class Document(object):
           "sentence_map": self.tokenized_sentences[max_segment_len].sentence_map,
           "subtoken_map": self.tokenized_sentences[max_segment_len].subtoken_map,
           "speakers": self.tokenized_sentences[max_segment_len].speakers,
-          "clusters": self.clusters
+          "clusters": self.clusters,
+          "parse_spans": self.parse_spans,
+          "pos": self.pos
         })]
 
 

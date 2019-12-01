@@ -59,7 +59,7 @@ def parse_to_spans(parse_col):
         stack.insert(0, [label, i])
       else:
         stack[0][0] += label
-  return label_map 
+  return [(k[0], k[1], v) for k,v in label_map.items()]
 
 def ldd_append(ldd, to_append):
   for k, v in to_append.items():
@@ -79,6 +79,8 @@ def add_sentence(curr_doc, curr_sent, doc_spans, sentence_offset):
   parse_spans = parse_to_spans(
       curr_sent[convert_lib.LabelSequences.PARSE])
   curr_doc.parse_spans.append(parse_spans)
+  curr_doc.pos.append(curr_sent[convert_lib.LabelSequences.POS])
+
 
   return doc_spans, sentence_offset + len(curr_sent[convert_lib.LabelSequences.WORD])
 
