@@ -99,9 +99,16 @@ def flatten(l):
   return sum(l, [])
 
 class TokenizedSentences(object):
-  def __init__(self, token_sentences, max_segment_len):
+  def __init__(self, token_sentences, max_segment_len, speakers):
     self.token_sentences = token_sentences
     self.max_segment_len = max_segment_len
+
+    self.per_sentence_speaker = []
+    for sentence_speakers in speakers:
+      assert len(set(sentence_speakers)) == 1
+      self.per_sentence_speaker.append(sentence_speakers[0])
+
+    #self.speakers = []
     (self.segments, self.sentence_map, self.subtoken_map, self.speakers) = self._segment_sentences()
 
   def _segment_sentences(self):
@@ -117,7 +124,7 @@ class TokenizedSentences(object):
       sentence_subtokens = flatten(subword_list)
       sentence_sentence_map = [i] * len(sentence_subtokens)
       sentence_subtoken_map = subword_to_word
-      sentence_speakers = [""] * len(sentence_subtokens)
+      sentence_speakers = [self.per_sentence_speaker[i]] * len(sentence_subtokens)
 
       if len(sentence_subtokens) + len(segment_subtokens) + 2 < self.max_segment_len:
         # Add to current segment
@@ -129,13 +136,18 @@ class TokenizedSentences(object):
         sentences.append([CLS] + segment_subtokens + [SEP])
         sentence_map += segment_sentence_map 
         subtoken_map += [0] + segment_subtoken_map + [segment_subtoken_map[-1]]
-        speakers += [SPL] + segment_speakers + [SPL]
+        speakers.append([SPL] + segment_speakers + [SPL])
 
         (segment_subtokens, segment_sentence_map, segment_subtoken_map,
          segment_speakers) = (sentence_subtokens, sentence_sentence_map,
          sentence_subtoken_map, sentence_speakers)
 
       running_token_idx += len(subword_list)
+
+    sentences.append([CLS] + segment_subtokens + [SEP])
+    sentence_map += segment_sentence_map 
+    subtoken_map += [0] + segment_subtoken_map + [segment_subtoken_map[-1]]
+    speakers.append([SPL] + segment_speakers + [SPL])
 
     return sentences, sentence_map, subtoken_map, speakers
 
@@ -181,11 +193,8 @@ class Document(object):
 
   def _get_sentence_idx(self, start, end):
     token_count = 0
-    print(start, end)
     for sent_i, sentence in enumerate(self.sentences):
-      print(token_count, sentence)
       end_sentence_token_count = token_count + len(sentence)
-      print(end_sentence_token_count)
       if end_sentence_token_count <= start:
         token_count = end_sentence_token_count
       elif end_sentence_token_count > start:
@@ -227,7 +236,7 @@ class Document(object):
     self.token_sentences = self.sentences
     for max_segment_len in [384, 512]:
       self.tokenized_sentences[max_segment_len] = TokenizedSentences(
-        self.token_sentences, max_segment_len)
+        self.token_sentences, max_segment_len, self.speakers)
     self.bert_tokenized = True
 
   def apply_dump_fn(self, function):
@@ -273,5 +282,5 @@ def write_converted(dataset, prefix):
       with open(prefix + "." + str(max_segment_len) + ".jsonl", 'w') as f:
         dataset.dump_to_jsonl(max_segment_len, f)
     dataset.dump_to_fpd(prefix + "-fpd/")
-    dataset.dump_to_feat(prefix + "-feat/")
+    #dataset.dump_to_feat(prefix + "-feat/")
  

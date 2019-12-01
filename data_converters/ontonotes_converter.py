@@ -39,33 +39,29 @@ def create_dataset(filename, field_map):
 
   for line in get_lines_from_file(filename):
 
-    if line.startswith("#"):
-      continue
+    if line.startswith("#begin"):
+      assert curr_doc is None 
+      curr_doc_id = line.split()[2][1:-2].replace("/", "-")
+      part = str(int(line.split()[-1]))
+      curr_doc = convert_lib.Document(curr_doc_id, part)
+      sentence_offset = 0
+    
+    elif line.startswith("#end"):
+      curr_doc.clusters = list(all_spans.values())
+      dataset.documents.append(curr_doc)
+      all_spans = collections.defaultdict(list)
+      curr_doc = None
 
-    if not line.strip():
+    elif not line.strip():
       if curr_sent:
         all_spans, sentence_offset = add_sentence(curr_doc, curr_sent, all_spans, sentence_offset)
         curr_sent = collections.defaultdict(list)
+
     else:
       fields = line.split()
-      # check for new doc
-      doc_name, part = fields[:2]
-      doc_id = convert_lib.make_doc_id(CONLL12, doc_name.replace("/", "-"))
-      if not doc_id == curr_doc_id:
-        # New document
-        if curr_doc is not None:
-          curr_doc.clusters = list(all_spans.values())
-          dataset.documents.append(curr_doc)
-          all_spans = collections.defaultdict(list)
-        curr_doc_id = doc_id
-        curr_doc = convert_lib.Document(curr_doc_id, part)
-        sentence_offset = 0
-
       for field_name, field_index in field_map.items():
         curr_sent[field_name].append(fields[field_index])
-
-  curr_doc.clusters = list(all_spans.values())
-  dataset.documents.append(curr_doc)
+        #print(field_name, fields[field_index])
 
   return dataset
 
