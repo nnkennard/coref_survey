@@ -2,6 +2,7 @@ import collections
 import json
 import sys
 import random
+import os
 
 TRUE_POSITIVES = "tp"
 TRUE_NEGATIVES = "tn"
@@ -64,21 +65,54 @@ def get_examples_from_clusters(true_clusters, predicted_clusters):
 
   
   return examples
-        
+
+class Model(object):
+  SPANBERT = "spanbert"
+  BERS = "bers"
+
+class Boundaries(object):
+  GOLD = "gold"
+  PREDICTED = "predicted"
+
+class Split(object):
+  TRAIN = "train"
+  TEST = "test"
+
+def get_output_file_name(output_dir, model, boundaries, dataset, split):
+  return os.path.join(output_dir,
+    "".join([model, "_", boundaries, "_", dataset, "_dt_", split, ".txt"]))
+
+def split_docs(doc_keys):
+  doc_key_list = list(doc_keys)
+  random.shuffle(doc_key_list)
+  boundary = int(0.8 * len(doc_key_list))
+  return doc_key_list[:boundary], doc_key_list[boundary:]
+
+
+def write_file(filename, all_examples, keys):
+  with open(filename, 'w') as f:
+    for doc_key in keys:
+      for label, examples in all_examples[doc_key].items():
+        for example in examples:
+          f.write("\t".join([doc_key] + [str(i) for i in sum(example, [])] + [label]) + "\n")
 
 def main():
   random.seed(43)
-  result_file = sys.argv[1]
-  all_dt_examples = []
+  result_file, model, boundaries, dataset = sys.argv[1:]
+  output_dir = "./"
+  all_dt_examples = {}
   with open(result_file, 'r') as f:
     docs = [json.loads(line.strip()) for line in f.readlines()]
   for doc in docs:
-    dt_examples = get_examples_from_clusters(doc["clusters"], doc["predicted_clusters"])
-    for label, pairs in dt_examples.items():
-      for antecedent, consequent in pairs:
-        print("\t".join(str(i) for i in [
-          doc["doc_key"], label, *(antecedent + consequent)]))
+    all_dt_examples[doc["doc_key"]] = get_examples_from_clusters(doc["clusters"], doc["predicted_clusters"])
 
+
+  doc_keys = {}
+  doc_keys[Split.TRAIN], doc_keys[Split.TEST] = split_docs(all_dt_examples.keys())
+
+  for split in [Split.TRAIN, Split.TEST]:
+    filename = get_output_file_name(output_dir, model, boundaries, dataset, split)
+    write_file(filename, all_dt_examples, doc_keys[split])
 
 if __name__ == "__main__":
   main()
