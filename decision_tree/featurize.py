@@ -35,18 +35,22 @@ def get_onehot(value_list, target):
   for i, value in enumerate(value_list):
     if value == target:
       onehot[i] = 1
+      assert sum(onehot) == 1
       return onehot
+  assert False
     
+def get_parse_onehot(span, parse_spans, all_parse_labels):
+  return get_onehot(all_parse_labels, parse_spans.get(span, "-"))
+
 def featurize(mentions, json_examples, all_parse_labels):
   mention_feature_map = {}
-  for doc_key, (str_start, str_end) in mentions:
-    start = int(str_start)
-    end = int(str_end)
+  for doc_key, (start, end) in mentions:
     doc = json_examples[doc_key]
     parse_spans = flatten_parse_spans(doc["parse_spans"], doc["token_sentences"])
-    mention_feature_map[(doc_key, (start, end))] = [end - start] + get_onehot(all_parse_labels, parse_spans.get((start, end), "-"))
+    mention_feature_map[
+      (doc_key, (start, end))] = [end - start] + get_parse_onehot((start, end), parse_spans, all_parse_labels)
 
-  return mention_feature_map, sorted(list(all_parse_labels))
+  return mention_feature_map
 
 class DecisionTreeExample(object):
   def __init__(self, doc_key, antecedent, consequent, label):
@@ -85,7 +89,7 @@ def main():
   
   mentions = get_mention_list(dt_examples)
   all_parse_labels = get_all_parse_labels(json_examples)
-  mention_feature_map, all_parse_labels= featurize(mentions, json_examples, all_parse_labels)
+  mention_feature_map = featurize(mentions, json_examples, all_parse_labels)
 
   for example in dt_examples:
     pair_features = mention_feature_map[example.antecedent] + mention_feature_map[example.consequent]
@@ -100,9 +104,11 @@ def main():
   clf = tree.DecisionTreeClassifier(max_depth=5)
   clf = clf.fit(examples, labels)
   tree.plot_tree(clf) 
-  dot_data = tree.export_graphviz(clf, filled=True, rounded=True, feature_names=feature_names, class_names=CATEGORIES, out_file=None) 
+  dot_data = tree.export_graphviz(
+                clf, filled=True, rounded=True, feature_names=feature_names,
+                class_names=CATEGORIES, out_file=None) 
   graph = graphviz.Source(dot_data) 
-  graph.render("iris")
+  graph.render("coref_dt")
 
 
 
