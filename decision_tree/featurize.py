@@ -6,6 +6,10 @@ import json
 import graphviz 
 import numpy as np
 import sys
+import h2o
+from tree_categorical_variables import *
+
+h2o.init()
 
 TRUE_POSITIVES = "tp"
 TRUE_NEGATIVES = "tn"
@@ -29,8 +33,8 @@ def get_top_n_RFE_features(model, n, examples, labels):
     
 
 def regroup_labels(labels):
-  replication_positives = [CATEGORIES.index(TRUE_POSITIVES), CATEGORIES.index(FALSE_POSITIVES)]
-  detection_positives = [CATEGORIES.index(TRUE_POSITIVES), CATEGORIES.index(TRUE_NEGATIVES)]
+  replication_positives = [TRUE_POSITIVES, FALSE_POSITIVES]
+  detection_positives = [TRUE_POSITIVES, TRUE_NEGATIVES]
   
   return [int(i in replication_positives) for i in labels], [int(i in detection_positives) for i in labels]
   
@@ -92,8 +96,10 @@ def featurize(mentions, json_examples, all_parse_labels):
   for doc_key, (start, end) in mentions:
     doc = json_examples[doc_key]
     parse_spans = flatten_parse_spans(doc["parse_spans"], doc["token_sentences"])
+    #mention_feature_map[
+    #  (doc_key, (start, end))] = [end - start] + get_parse_onehot((start, end), parse_spans, all_parse_labels)
     mention_feature_map[
-      (doc_key, (start, end))] = [end - start] + get_parse_onehot((start, end), parse_spans, all_parse_labels)
+      (doc_key, (start, end))] = [end - start] + [parse_spans.get((start, end), "-")]
 
   return mention_feature_map
 
@@ -137,40 +143,34 @@ def main():
   mention_feature_map = featurize(mentions, json_examples, all_parse_labels)
 
   for example in dt_examples:
-    pair_features = mention_feature_map[example.antecedent] + mention_feature_map[example.consequent]
+    pair_features = mention_feature_map[example.antecedent] + mention_feature_map[example.consequent]#+ [example.label]
     examples.append(pair_features)
     labels.append(CATEGORIES.index(example.label))
-    if len(examples) == 1000:
-      break
-
-  examples, labels = np.array(examples), np.array(labels)
-  print(examples.shape)
-  print(labels.shape)
 
   replication_labels, error_detection_labels = regroup_labels(labels)
+  feature_names =[
+      "antecedent_len", "antecedent_span_label",
+      "consequent_len", "consequent_span_label", "label"]
+  target_col = "label"
+  h2o_examples = h2o.H2OFrame.from_python(examples, column_names=feature_names)
+  pd_examples = pd.DataFrame(examples, columns=feature_names)
+  print(pd_examples)
+  h2ofr = h2o.H2OFrame(pd_examples)
+  h2ofr.col_names = list(feature_names)
+  model=H2ORandomForestEstimator(ntrees=100, categorical_encoding="sort_by_response", max_depth=100)
+  model.train(x=feature_names,
+                    y=target_col,
+                    training_frame=h2ofr)
+  print(dir(model))
+  print(model.categorical_encoding)
+  print(model.model_performance(test_data=h2ofr))
 
-  for x, y in zip(replication_labels, error_detection_labels):
-    print(x, y)
+  from h2o.tree import H2OTree
 
-  feature_names = ["antecedent_len"] + ["antecedent_" + span for span in all_parse_labels]
-  feature_names += ["consequent_len"] + ["consequent_" + span for span in all_parse_labels]
-  
+  first_tree = H2OTree(model=model, tree_number = 0, tree_class='fp')
+  print(first_tree)
+  print(first_tree.root_node)
 
-  # Replication
-  clf = LogisticRegressionCV(cv=5, random_state=0, max_iter=1000,
-          multi_class='multinomial').fit(examples, replication_labels)
-  sfm = SelectFromModel(clf, 10)
-  print(dir(sfm))
-  print(dir(clf))
-  print(_get_feature_importances(clf))
-  print(clf.coef_)
-
-  
-  print(list(feature_names[i] for i in get_top_n_RFE_features(clf, 15, examples, replication_labels)))
-  
-  clf = LogisticRegressionCV(cv=5, random_state=0, max_iter=1000,
-          multi_class='multinomial').fit(examples, error_detection_labels)
-  print(list(feature_names[i] for i in get_top_n_RFE_features(clf, 15, examples, error_detection_labels)))
-  
+ 
 if __name__ == "__main__":
   main()
