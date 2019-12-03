@@ -96,23 +96,28 @@ def write_file(filename, all_examples, keys):
         for example in examples:
           f.write("\t".join([doc_key] + [str(i) for i in sum(example, [])] + [label]) + "\n")
 
+def get_keys_from_file(filename):
+  with open(filename, 'r') as f:
+    return [line.strip() for line in f]
+
 def main():
   random.seed(43)
-  result_file, model, boundaries, dataset = sys.argv[1:]
-  output_dir = "./"
+  result_file, keys_file, model, boundaries, dataset, split = sys.argv[1:]
+  output_dir = "./outputs/"
   all_dt_examples = {}
+  
+
   with open(result_file, 'r') as f:
     docs = [json.loads(line.strip()) for line in f.readlines()]
+
+  required_keys = get_keys_from_file(keys_file)
   for doc in docs:
-    all_dt_examples[doc["doc_key"]] = get_examples_from_clusters(doc["clusters"], doc["predicted_clusters"])
+    if doc["doc_key"] in required_keys:
+      all_dt_examples[doc["doc_key"]] = get_examples_from_clusters(doc["clusters"], doc["predicted_clusters"])
 
-
-  doc_keys = {}
-  doc_keys[Split.TRAIN], doc_keys[Split.TEST] = split_docs(all_dt_examples.keys())
-
-  for split in [Split.TRAIN, Split.TEST]:
-    filename = get_output_file_name(output_dir, model, boundaries, dataset, split)
-    write_file(filename, all_dt_examples, doc_keys[split])
+  filename = get_output_file_name(
+        output_dir, model, boundaries, dataset, split)
+  write_file(filename, all_dt_examples, required_keys)
 
 if __name__ == "__main__":
   main()

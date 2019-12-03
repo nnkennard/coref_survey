@@ -1,9 +1,5 @@
-from sklearn import tree
-from sklearn.feature_selection import RFE
-from sklearn.feature_selection import SelectFromModel
-from sklearn.linear_model import LogisticRegressionCV
+import collections
 import json
-import graphviz 
 import numpy as np
 import sys
 import h2o
@@ -19,24 +15,11 @@ FALSE_NEGATIVES = "fn"
 CATEGORIES = [TRUE_POSITIVES, FALSE_POSITIVES, TRUE_NEGATIVES, FALSE_NEGATIVES]
 
 
-def get_top_n_RFE_features(model, n, examples, labels):
-  feature_indices = []
-
-  for i in range(n):
-    rfe = RFE(model, n+1)
-    fit = rfe.fit(examples, labels)
-    for i, included in enumerate(fit.support_):
-      if included and i not in feature_indices:
-        feature_indices.append(i)
-  
-  return feature_indices
-    
-
 def regroup_labels(labels):
   replication_positives = [TRUE_POSITIVES, FALSE_POSITIVES]
   detection_positives = [TRUE_POSITIVES, TRUE_NEGATIVES]
   
-  return [int(i in replication_positives) for i in labels], [int(i in detection_positives) for i in labels]
+  return [str(i in replication_positives) for i in labels], [str(i in detection_positives) for i in labels]
   
 
 def get_mention_list(dt_examples):
@@ -44,6 +27,7 @@ def get_mention_list(dt_examples):
   for example in dt_examples:
     mention_set.update([example.antecedent, example.consequent])
   return mention_set
+
 
 def flatten_parse_spans(parse_spans, token_sentences):
   overall_parse_span_map = {}
@@ -56,48 +40,13 @@ def flatten_parse_spans(parse_spans, token_sentences):
     token_count += len(sentence)
 
   return overall_parse_span_map
-  
-def _get_feature_importances(estimator, norm_order=1):
-    """Retrieve or aggregate feature importances from estimator"""
-    importances = getattr(estimator, "feature_importances_", None)
 
-    coef_ = getattr(estimator, "coef_", None)
-    if importances is None and coef_ is not None:
-        if estimator.coef_.ndim == 1:
-            importances = np.abs(coef_)
-
-        else:
-            importances = np.linalg.norm(coef_, axis=0,
-                                         ord=norm_order)
-
-    elif importances is None:
-        raise ValueError(
-            "The underlying estimator %s has no `coef_` or "
-            "`feature_importances_` attribute. Either pass a fitted estimator"
-            " to SelectFromModel or call fit before calling transform."
-            % estimator.__class__.__name__)
-
-    return importances  
-
-def get_onehot(value_list, target):
-  onehot = [0] * len(value_list)
-  for i, value in enumerate(value_list):
-    if value == target:
-      onehot[i] = 1
-      assert sum(onehot) == 1
-      return onehot
-  assert False
-    
-def get_parse_onehot(span, parse_spans, all_parse_labels):
-  return get_onehot(all_parse_labels, parse_spans.get(span, "-"))
 
 def featurize(mentions, json_examples, all_parse_labels):
   mention_feature_map = {}
   for doc_key, (start, end) in mentions:
     doc = json_examples[doc_key]
     parse_spans = flatten_parse_spans(doc["parse_spans"], doc["token_sentences"])
-    #mention_feature_map[
-    #  (doc_key, (start, end))] = [end - start] + get_parse_onehot((start, end), parse_spans, all_parse_labels)
     mention_feature_map[
       (doc_key, (start, end))] = [end - start] + [parse_spans.get((start, end), "-")]
 
@@ -143,31 +92,39 @@ def main():
   mention_feature_map = featurize(mentions, json_examples, all_parse_labels)
 
   for example in dt_examples:
-    pair_features = mention_feature_map[example.antecedent] + mention_feature_map[example.consequent]#+ [example.label]
+    pair_features = mention_feature_map[example.antecedent] + mention_feature_map[example.consequent]
     examples.append(pair_features)
-    labels.append(CATEGORIES.index(example.label))
+    labels.append(example.label)
 
   replication_labels, error_detection_labels = regroup_labels(labels)
   feature_names =[
       "antecedent_len", "antecedent_span_label",
-      "consequent_len", "consequent_span_label", "label"]
+      "consequent_len", "consequent_span_label"#, "label"
+  ]
   target_col = "label"
-  h2o_examples = h2o.H2OFrame.from_python(examples, column_names=feature_names)
   pd_examples = pd.DataFrame(examples, columns=feature_names)
-  print(pd_examples)
+  pd_examples["label"] = replication_labels
   h2ofr = h2o.H2OFrame(pd_examples)
-  h2ofr.col_names = list(feature_names)
+  h2ofr.col_names = list(pd_examples.columns)
   model=H2ORandomForestEstimator(ntrees=100, categorical_encoding="sort_by_response", max_depth=100)
   model.train(x=feature_names,
                     y=target_col,
                     training_frame=h2ofr)
-  print(dir(model))
-  print(model.categorical_encoding)
+  print(model.model_performance(test_data=h2ofr))
+  
+  pd_examples["label"] = error_detection_labels
+  h2ofr = h2o.H2OFrame(pd_examples)
+  h2ofr.col_names = list(pd_examples.columns)
+  model=H2ORandomForestEstimator(ntrees=100, categorical_encoding="sort_by_response",
+                                 max_depth=20)
+  model.train(x=feature_names,
+                    y=target_col,
+                    training_frame=h2ofr)
   print(model.model_performance(test_data=h2ofr))
 
-  from h2o.tree import H2OTree
 
-  first_tree = H2OTree(model=model, tree_number = 0, tree_class='fp')
+  from h2o.tree import H2OTree
+  first_tree = H2OTree(model=model, tree_number = 0, tree_class=None)
   print(first_tree)
   print(first_tree.root_node)
 
