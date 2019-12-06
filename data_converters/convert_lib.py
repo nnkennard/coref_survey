@@ -107,7 +107,7 @@ class TokenizedSentences(object):
       self.per_sentence_speaker.append(sentence_speakers[0])
 
     (self.segments, self.sentence_map, self.subtoken_map, self.speakers) = self._segment_sentences()
-  self.clusters = self.bertify_clusters(clusters, self.subtoken_map)
+    self.clusters = self.bertify_clusters(clusters, self.subtoken_map)
 
   
   def _segment_sentences(self):
@@ -153,16 +153,18 @@ class TokenizedSentences(object):
     reverse_token_map = {}
     current_start = 0
     current_end = None
-    for subtoken_idx, token_idx in enumerate(subtoken_map):
+    for subtoken_idx, token_idx in enumerate(subtoken_map[:-1]):
       maybe_next_token_idx = subtoken_map[subtoken_idx + 1]
       if token_idx != maybe_next_token_idx:
         reverse_token_map[token_idx] = (current_start, subtoken_idx)
         current_start = subtoken_idx + 1
+    reverse_token_map[subtoken_map[-1]] = (current_start, len(subtoken_map) - 1)
     bertified_clusters = []
     for cluster in clusters:
       new_cluster = []
       for start, end in cluster:
-        new_cluster.append((reverse_token_map[start], reverse_token_map[end]))
+        new_cluster.append(
+          (reverse_token_map[start][0], reverse_token_map[end][1]))
       bertified_clusters.append(new_cluster)
     return bertified_clusters  
         

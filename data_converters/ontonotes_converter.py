@@ -118,9 +118,10 @@ def create_dataset(filename, field_map):
         curr_sent = collections.defaultdict(list)
 
     else:
-      fields = line.split()
+      fields = line.replace("/.", ".").split()
       for field_name, field_index in field_map.items():
         curr_sent[field_name].append(fields[field_index])
+
 
   return dataset
 
