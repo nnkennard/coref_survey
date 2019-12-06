@@ -1,8 +1,5 @@
 import sys
 
-
-#conll12_bc-cctv-00-cctv_0001    0       26      16      12      Chongqing       NNP     (NP)    (GPE)   Luo_huanzhang
-
 with open(sys.argv[1], 'r') as f:
   for line in f:
     if line.strip():
@@ -12,7 +9,7 @@ with open(sys.argv[1], 'r') as f:
       elif len(tokens.split()) == 1:
         print("POS\t" + pos)
       else:
-        print("\t".join(["Other", parse, pos, tokens]))
+        print("\t".join(["Other", doc, parse, pos, tokens]))
 
 
 
