@@ -54,7 +54,7 @@ def create_dataset(filename):
       if not fields:
         if curr_sent:
           add_sentence(curr_doc, curr_sent)
-          coref_spans = conll_lib.get_spans_from_conll(curr_sent_orig_coref_labels,
+          coref_spans = conll_lib.coref_to_spans(curr_sent_orig_coref_labels,
             sentence_offset)
           all_spans = ldd_append(all_spans, coref_spans)
           sentence_offset += len(curr_sent)

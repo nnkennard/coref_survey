@@ -46,9 +46,10 @@ def make_doc_id(dataset, doc_name):
     doc_name = "_".join(doc_name)
   return "_".join([dataset, doc_name])
 
+NO_SPEAKER = ""
 
-#def make_empty_speakers(sentences):
-#  return [[NO_SPEAKER for token in sent] for sent in sentences]
+def make_empty_speakers(sentences):
+  return [[NO_SPEAKER for token in sent] for sent in sentences]
 
 CLS = "[CLS]"
 SPL = "[SPL]"

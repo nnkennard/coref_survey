@@ -31,8 +31,7 @@ class Mention(object):
     return "\t".join([self.doc,
               self.part,
               self.entity, str(self.sentence), str(self.start),
-              #"".join(self.parse).replace("*", ""),
-              self.parse.replace("*", ""),
+              "".join(self.parse).replace("*", ""),
               " ".join(self.pos),
               " ".join(self.tokens),
               " ".join(self.ner).replace("*", "").replace(" ", ""),
@@ -62,8 +61,8 @@ def create_dataset(filename):
       # add sentence
       if curr_sent_orig_labels:
         (parts, tokens, pos, parse, speakers, ner, coref) = zip(*curr_sent_orig_labels)
-        coref_spans = conll_lib.get_spans_from_conll(coref, 0)
-        parse_spans = conll_lib.get_parse_spans_from_conll(parse)
+        coref_spans = conll_lib.coref_to_spans(coref, 0)
+        parse_spans = conll_lib.parse_to_spans(parse)
 
         for entity, cluster in coref_spans.items():
           for start, inclusive_end in cluster:
@@ -71,13 +70,12 @@ def create_dataset(filename):
             assert len(set(speakers)) == 1
             end = inclusive_end + 1 
 
-            parse_label = parse_spans.get((start, inclusive_end), "_")
+            parse_label = parse_spans.get((start, inclusive_end), "~"+"".join(parse[start:end]))
             mention_obj = Mention(curr_doc_id, parts[0], entity, sentence_idx,
               start, parse_label, tokens[start:end], pos[start:end], ner[start:end],
               speakers[0])
   
             mentions_map[mention_obj.mention_id].append(mention_obj)
-
             
         sentence_idx += 1
 
@@ -105,40 +103,10 @@ def create_dataset(filename):
 
       curr_sent_orig_labels.append((part, token, pos, parse, speaker, ner, coref))
         
-  curr_doc.clusters = list(all_spans.values())
-  dataset.documents.append(curr_doc)
 
-
-  i = 0
-  for entity, mentions in mentions_map.items():
-    print(entity)
-    print(all_surface_forms(mentions))
-    print(canonical_mention(mentions))
-    i += 1
-    print()
-
-    if i == 1000:
-      break
-
-
-  return dataset
-
-def all_surface_forms(mentions):
-  #return [" ".join(mention.tokens) for mention in mentions]
-  return ([" ".join(mention.tokens) for mention in mentions],
-          [" ".join(mention.ner) for mention in mentions],
-          [mention.parse for mention in mentions])
-
-def canonical_mention(mentions):
-  selected = 0, mentions[0]
-  for i, mention in enumerate(mentions):
-    ner_string = "".join(mention.ner)
-    if ner_string.startswith("(") and ner_string.endswith(")"):
-      selected = (i, mention)
-      break
-
-  return selected[0], " ".join(selected[1].tokens)
-
+  for mention_id, mentions in mentions_map.items():
+    for mention in mentions:
+      print(str(mention)) 
 
 def main():
   _ = create_dataset(sys.argv[1])
