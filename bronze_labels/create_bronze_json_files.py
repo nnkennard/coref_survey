@@ -37,9 +37,9 @@ def main():
         doc_predictions = set(tuple(i) for i in predictions[doc_key])
         high_precision_mentions, high_recall_mentions = get_bronze_mentions(
           example["clusters"], doc_predictions)
-        example["bronze"] = high_precision_mentions
+        example["clusters"] = [high_precision_mentions]
         fp.write(json.dumps(example) + "\n")
-        example["bronze"] = high_recall_mentions
+        example["clusters"] = [high_recall_mentions]
         fr.write(json.dumps(example) + "\n")
 
 
