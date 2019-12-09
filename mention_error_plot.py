@@ -15,11 +15,12 @@ def normalize(df):
 
 pd.set_option('display.max_columns', 20)
 
-
-HIGH_FREQ = ["Span_(TOP)", "POS_VBD", "POS_VB", "Span_(NML)", "POS_NNP", #"POS_PRP$", "Span_(NP)"
-]
-
-MED_FREQ = ["Span_(ADVP)", "Span_(ADJP)", "POS_JJ", "POS_CD", "POS_PRP", "POS_NN", "Span_(VP)", "Span_(S)", "Other_", "POS_VBP", "POS_VBZ", "POS_VBG", "POS_VBN"]
+HF_spans = ["Span_(NP)", "Span_(NML)"]
+HF_pos = ["POS_PRP$", "POS_NNP"]
+OTHER = ["Other"]
+MED_FREQ = ["POS_VB", "POS_VBD", "Span_(TOP)", "POS_VBN", "POS_VBG", "POS_VBZ", "POS_VBP", "Other",
+        #"Span_(S)", "Span_(VP)", "POS_NN", "POS_PRP", "POS_CD", "POS_JJ", "Span_(ADJP)", "Span_(ADVP)"
+        ]
 
 def read_file(filename):
   detected_mention_list = []
@@ -32,15 +33,16 @@ def read_file(filename):
 
 def read_data_from_files(data_path):
   detected_mentions = {}
-  for model in ["bert_base", "bert_large", "spanbert_base", "spanbert_large"]:
-    for span_ratio in ["0.4", "0.8"]:
-      filename = "".join([data_path, "/detected-mentions_train_", model, "_conll12_", span_ratio, ".jsonl"])
-      detected_mentions[model + "-" + span_ratio] = read_file(filename)
+  for model, span_ratio in [("spanbert_base", "0.4"), ("spanbert_large", "0.4"), ("spanbert_large", "0.8")]:
+    filename = "".join([data_path, "/detected-mentions_train_", model, "_conll12_", span_ratio, ".jsonl"])
+    detected_mentions[model + "-" + span_ratio] = read_file(filename)
 
   detected_mentions["bers"] = read_file(data_path + "/bers_mentions_conll-dev.jsonl")
   return detected_mentions
 
 def read_actual_mentions(mention_summary_file, mention_jsonl_file):
+
+  gold_counts = collections.Counter()
 
   examples = {}
   with open(mention_jsonl_file, 'r') as f:
@@ -57,14 +59,17 @@ def read_actual_mentions(mention_summary_file, mention_jsonl_file):
       span_len = len(pos.split())
       if not span.startswith("~"):
         label = (span, None)
+        gold_counts["Span_" + span] += 1
       elif span_len == 1:
         label = (None, pos)
+        gold_counts["POS_" + pos] += 1
       else:
         label = (None, None)
+        gold_counts["Other"] += 1
       token_start = sentence_offset + int(start)
       token_end = sentence_offset + int(start) + span_len - 1
       mention_map[(doc_key , token_start, token_end)] = label
-  return mention_map
+  return mention_map, {"gold": gold_counts}
   
 def get_key_from_details(span, pos):    
   if span is not None:
@@ -76,42 +81,110 @@ def get_key_from_details(span, pos):
   return key
 
 def main():
-  detected_mentions = read_data_from_files(sys.argv[1])
-  actual_mentions = read_actual_mentions(sys.argv[2], sys.argv[3])
 
-  gold_map = {}
-  true_positive_map = collections.defaultdict(lambda : collections.Counter())
+  data_path, gold_summary_file, json_file = sys.argv[1:]
+
+  detected_mentions = read_data_from_files(data_path)
+  actual_mentions, gold_counts= read_actual_mentions(gold_summary_file, json_file)
+
+  #true_positive_map = collections.defaultdict(lambda : collections.Counter())
   false_negative_map = collections.defaultdict(lambda : collections.Counter())
 
   # True positives
-  for dataset, mention_values in detected_mentions.items():
-    for mention in mention_values: 
-      details = actual_mentions.get(mention, None)
-      if details is not None:
-        key = get_key_from_details(*details)
-        if key in MED_FREQ:
-          true_positive_map[dataset][key] += 1
+  #for dataset, mention_values in detected_mentions.items():
+  #  for mention in mention_values: 
+  #    details = actual_mentions.get(mention, None)
+  #    if details is not None:
+  #      key = get_key_from_details(*details)
+  #      if key in HF_pos + HF_spans :
+  #        continue
+  #      true_positive_map[dataset][key] += 1
 
   # False negatives
   for dataset, mention_values in detected_mentions.items():
     false_negatives = set(actual_mentions.keys()) - set(mention_values)
     for mention in false_negatives:
       key = get_key_from_details(*actual_mentions[mention])
-      if key in MED_FREQ:
-        false_negative_map[dataset][key] += 1
-        
+      if key in HF_spans + HF_pos:
+        continue
+      if key not in MED_FREQ:
+        continue
+      false_negative_map[dataset][key] += 1
 
-  true_positive_df = normalize(pd.DataFrame(true_positive_map))
+  table_totals = collections.defaultdict(lambda:collections.Counter())
+  table_tp = collections.defaultdict(lambda:collections.Counter())
+
+  for model, labels in gold_counts.iteritems():
+    for label, count in labels.iteritems():
+      if label in HF_pos + HF_spans:
+        table_totals[model][label] += count
+      elif label in OTHER:
+        table_totals[model]["Other"] += count
+      else:
+        table_totals[model]["low_freq"] += count
+
+  print(pd.DataFrame(table_totals).to_csv(sep="\t"))
+ 
+  #for model, labels in true_positive_map.iteritems():
+  #  for label, count in labels.iteritems():
+  #    if label in HF_pos + HF_spans:
+  #      table_tp[model][label] += count
+  #    elif label in OTHER:
+  #      table_tp[model]["Other"] += count
+  #    else:
+  #      table_tp[model]["low_freq"] += count
+
+  for label in HF_spans + HF_pos:
+    del gold_counts["gold"][label]
   
+  for label in gold_counts["gold"].keys():
+    if label not in MED_FREQ:
+      del gold_counts["gold"][label]
 
-  #false_negative_df = normalize(pd.DataFrame(false_negative_map))
+
+  gold_counts = pd.DataFrame(gold_counts) 
+  #true_positive_df = pd.DataFrame(true_positive_map)
+  #print(true_positive_df)
+  #true_positive_df = pd.concat([true_positive_df, gold_counts], axis = 1)
+  #print(true_positive_df)
+
+
   false_negative_df = pd.DataFrame(false_negative_map)
+  false_negative_df = normalize(pd.concat([gold_counts, false_negative_df], axis=1, sort=True)).sort_values(by=["gold"])
+  #false_negative_df.sort_values(by=["gold"])
 
-  from matplotlib.colors import ListedColormap
+  print(false_negative_df)
+
+  #from matplotlib.colors import ListedColormap
 
   sns.set()
 
-  false_negative_df.T.plot(kind="bar", stacked=True)
+
+    
+  fig = plt.figure()
+  ax = plt.subplot(111)
+
+  plt.title("Distribution of false negatives")
+    
+  false_negative_df.T.plot(kind="bar", stacked=True, ax=ax)
+
+    
+  handles, labels = ax.get_legend_handles_labels()
+  chartBox = ax.get_position()
+  ax.set_position([chartBox.x0, chartBox.y0, chartBox.width*0.6, chartBox.height])
+  ax.legend(reversed(handles), reversed(labels), loc='upper left', bbox_to_anchor=(1.45, 1.1), shadow=True, ncol=1)
+
+    
+  bars = ax.patches
+  hatches = ''.join(h*15 for h in 'x/O.')
+
+  #for bar, hatch in zip(bars, hatches):
+  #    bar.set_hatch(hatch)
+
+  plt.xticks(rotation=20)
+  #true_positive_df.T.plot(kind="bar", stacked=True)
+  #plt.legend(loc=8, ncol=5)
+  #plt.legend(bbox_to_anchor=(1,0), borderaxespad=0.1, loc="center right", ncol=2, )
   plt.show()
 
 
