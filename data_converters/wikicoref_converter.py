@@ -46,7 +46,9 @@ def create_dataset(filename):
         curr_doc.clusters = list(all_spans.values())
         all_spans = collections.defaultdict(list)
         dataset.documents.append(curr_doc)
-      curr_doc_id = convert_lib.make_doc_id(dataset_name, line.split()[2:])
+
+      print(line.split()[2:])
+      curr_doc_id = convert_lib.make_doc_id(dataset_name, "-".join(line.split()[2:]))
       curr_doc = convert_lib.Document(curr_doc_id, DUMMY_DOC_PART)
       sentence_offset = 0
     else:

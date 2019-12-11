@@ -42,6 +42,9 @@ def create_processed_data_dir(path):
       print ("Successfully created the directory %s " % path)
 
 def make_doc_id(dataset, doc_name):
+  if dataset in [DatasetName.gap, DatasetName.wikicoref]:
+    return dataset + '-' +  doc_name
+    
   if type(doc_name) == list:
     doc_name = "_".join(doc_name)
   return "_".join([dataset, doc_name])

@@ -6,8 +6,8 @@ import wikicoref_converter
 
 def main():
   data_home = sys.argv[1]
-  print("GAP")
-  gap_converter.convert(data_home) 
+  #print("GAP")
+  #gap_converter.convert(data_home) 
   #print("Preco")
   #preco_converter.convert(data_home) 
   print("Wikicoref")
